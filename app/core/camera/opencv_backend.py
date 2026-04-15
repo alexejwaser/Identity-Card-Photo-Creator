@@ -4,11 +4,28 @@ import cv2
 from PySide6 import QtGui
 from .base import BaseCamera, CameraError
 
+# Map clockwise-rotation degrees to the corresponding cv2 constant.
+# 270° CW = 90° CCW, which is the correct setting for a Canon EOS M50
+# connected in webcam mode (sensor outputs landscape, portrait needed).
+_CV2_ROTATION = {
+    90: cv2.ROTATE_90_CLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+}
+
 
 class OpenCVCamera(BaseCamera):
-    def __init__(self, camera_id: int = 0):
+    def __init__(self, camera_id: int = 0, rotation: int = 0):
         self.camera_id = camera_id
         self.cap = None
+        self.rotation = rotation  # degrees clockwise (0, 90, 180, 270)
+
+    def _rotate(self, frame):
+        """Rotate *frame* by the configured amount; no-op if rotation is 0."""
+        code = _CV2_ROTATION.get(self.rotation)
+        if code is not None:
+            return cv2.rotate(frame, code)
+        return frame
 
     def start_liveview(self):
         if self.cap is None:
@@ -30,7 +47,7 @@ class OpenCVCamera(BaseCamera):
         ret, frame = self.cap.read()
         if not ret:
             raise CameraError("Kein Bild von Kamera erhalten")
-        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        frame = self._rotate(frame)
         cv2.imwrite(str(dest), frame)
 
     def capture_preview(self, dest: Path) -> None:
@@ -41,7 +58,7 @@ class OpenCVCamera(BaseCamera):
         ret, frame = self.cap.read()
         if not ret:
             raise CameraError("Kein Bild von Kamera erhalten")
-        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        frame = self._rotate(frame)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
         bytes_per_line = ch * w

@@ -27,15 +27,16 @@ class MainController:
     # camera -----------------------------------------------------------------
     def _init_camera(self):
         backend = getattr(self.settings.kamera, "backend", "opencv")
+        rotation = getattr(self.settings.kamera, "rotation", 270)
         cam = None
         if backend == "gphoto2" and QtCore.QStandardPaths.findExecutable("gphoto2"):
             cam = GPhoto2Camera()
         elif backend == "simulator":
             cam = SimulatorCamera()
         else:
+            # Default: OpenCV (Webcam-Modus, z.B. Canon EOS M50 per USB)
             try:
-                # In Webcam-Modus standardmaessig die zweite Kamera verwenden
-                cam = OpenCVCamera(1)
+                cam = OpenCVCamera(1, rotation=rotation)
                 self.current_cam_id = 1
             except Exception:
                 cam = None
@@ -58,7 +59,7 @@ class MainController:
 
     # excel handling ---------------------------------------------------------
     def load_excel(self, path: Path) -> List[str]:
-        self.reader = ExcelReader(path, self.settings.excelMapping)
+        self.reader = ExcelReader(path, self.settings.excelMapping.model_dump())
         locations = self.reader.locations()
         return locations
 
@@ -69,10 +70,17 @@ class MainController:
         self.current_classes = classes
         return classes
 
-    def learners_for_class(self, location: str, class_name: str) -> List[Learner]:
+    def learners_for_class(
+        self,
+        location: str,
+        class_name: str,
+        skip_photographed: bool = False,
+    ) -> List[Learner]:
         if not self.reader or not class_name:
             return []
-        self.learners = self.reader.learners(location, class_name)
+        self.learners = self.reader.learners(
+            location, class_name, skip_photographed=skip_photographed
+        )
         self.current = 0
         return self.learners
 
@@ -92,6 +100,8 @@ class MainController:
 
     # actions ----------------------------------------------------------------
     def excel_running(self) -> bool:
+        # Note: on non-Windows platforms EXCEL.EXE is never running, so this
+        # check is effectively a no-op outside Windows.
         for proc in psutil.process_iter(["name"]):
             try:
                 name = proc.info["name"] or ""

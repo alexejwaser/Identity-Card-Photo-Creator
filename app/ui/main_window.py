@@ -10,7 +10,6 @@ import psutil
 
 from ..core.config.settings import Settings
 from ..core.controller import MainController
-from ..core.camera import SimulatorCamera, GPhoto2Camera, OpenCVCamera
 from ..core.excel.reader import ExcelReader, Learner
 from ..core.excel.missed_writer import MissedWriter, MissedEntry
 from ..core.imaging.processor import process_image
@@ -32,10 +31,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.logger = logger or logging.getLogger(type(self).__name__)
         self.settings = settings
         self.controller = controller or MainController(settings)
-        self.camera = self._init_camera()
-        # Ensure the controller uses the same camera instance as the UI so that
-        # all capture operations share state and configuration.
-        self.controller.camera = self.camera
+        # Use the camera that the controller already created – no duplication.
+        self.camera = self.controller.camera
         self._reader = None
         self.busy = False
         self._jump_return = None
@@ -53,27 +50,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.controller is not None:
             self.controller.reader = value
 
-    def _init_camera(self):
-        backend = self.settings.kamera.backend
-        cam = None
-        if backend == 'gphoto2' and QtCore.QStandardPaths.findExecutable('gphoto2'):
-            cam = GPhoto2Camera()
-        elif backend == 'simulator':
-            cam = SimulatorCamera()
-        else:
-            try:
-                # In Webcam-Modus standardmaessig die zweite Kamera verwenden
-                cam = OpenCVCamera(1)
-                self.current_cam_id = 1
-            except Exception:
-                cam = None
-        if cam is None:
-            cam = SimulatorCamera()
-        return cam
-
     def _setup_ui(self):
         self.setWindowTitle('LegicCard-Creator')
-        self.setFixedSize(1000, 700)
+        self.setMinimumSize(900, 620)
         central = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(central)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -100,6 +79,13 @@ class MainWindow(QtWidgets.QMainWindow):
         icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogDetailedView)
         self.btn_settings.setIcon(icon)
         self.btn_settings.setToolTip('Einstellungen')
+
+        # Tooltips for keyboard shortcuts (cleaner than baking them into labels)
+        self.btn_capture.setToolTip('Leertaste')
+        self.btn_skip.setToolTip('S')
+        self.btn_add_person.setToolTip('A')
+        self.btn_finish.setToolTip('F')
+
         layout.addWidget(self.controls)
 
         # right preview
@@ -108,7 +94,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.preview = LiveViewWidget(self.camera, fps)
         self.preview.set_overlay_image(self.settings.overlay.image)
         preview_layout = QtWidgets.QVBoxLayout()
-        preview_layout.setSpacing(10)
+        preview_layout.setSpacing(8)
+
+        # Current / next learner labels
         name_layout = QtWidgets.QHBoxLayout()
         self.label_current = QtWidgets.QLabel('')
         self.label_current.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
@@ -120,9 +108,25 @@ class MainWindow(QtWidgets.QMainWindow):
         name_layout.addStretch()
         name_layout.addWidget(self.label_upcoming)
         preview_layout.addLayout(name_layout)
+
+        # Progress bar showing photographed / total for the current class
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setFixedHeight(14)
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { border: 1px solid #aaa; border-radius: 3px; }"
+            "QProgressBar::chunk { background: #0078d4; border-radius: 2px; }"
+        )
+        preview_layout.addWidget(self.progress_bar)
+
         preview_layout.addWidget(self.preview)
+
+        # Camera-switch button lives in the control area, but kept here for
+        # visual grouping with the preview; may be moved to ControlPanel later.
         self.btn_switch_camera = QtWidgets.QPushButton('Kamera wechseln')
-        self.btn_switch_camera.setFixedWidth(120)
+        self.btn_switch_camera.setToolTip('C')
+        self.btn_switch_camera.setFixedWidth(140)
         preview_layout.addWidget(self.btn_switch_camera)
         layout.addLayout(preview_layout)
 
@@ -160,7 +164,6 @@ class MainWindow(QtWidgets.QMainWindow):
         show: bool = True,
     ) -> None:
         """Log *message* with *level* and optionally show a QMessageBox."""
-
         log_fn = getattr(self.logger, level, self.logger.info)
         log_fn(f"{title}: {message}")
         if not show:
@@ -210,26 +213,81 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def load_learners(self, class_name: str):
         location = self.controls.cmb_location.currentText()
-        self.controller.learners_for_class(location, class_name)
+        if not self.reader or not class_name:
+            self._update_buttons()
+            return
+
+        # Check how many students are already photographed and offer to skip them.
+        all_learners = self.reader.learners(location, class_name)
+        already_done = sum(1 for l in all_learners if l.photographed)
+
+        skip_photographed = False
+        if already_done > 0:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                'Bereits fotografiert',
+                f'{already_done} von {len(all_learners)} Lernenden wurden bereits fotografiert.\n'
+                'Sollen diese übersprungen werden?',
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            )
+            skip_photographed = (reply == QtWidgets.QMessageBox.Yes)
+
+        self.controller.learners_for_class(location, class_name, skip_photographed=skip_photographed)
+
+        # Warn about duplicate student IDs – they would cause silent file collisions.
+        dupes = self.reader.duplicate_ids(location, class_name)
+        if dupes:
+            self._notify(
+                'Doppelte SchülerIDs',
+                f'Achtung: Diese IDs kommen mehrfach vor: {", ".join(dupes)}\n'
+                'Bitte die Excel-Datei prüfen.',
+                level='warning',
+            )
+
         self.show_next()
         self._update_buttons()
 
     def show_next(self):
         learner = self.controller.current_learner()
+        total = len(self.controller.learners)
+        done = self.controller.current
+
         if learner is None:
             self.label_current.setText('Klasse abgeschlossen')
+            self.label_current.setStyleSheet('font-size:16px; color: green;')
             self.label_upcoming.setText('')
+            if total > 0:
+                self.progress_bar.setVisible(True)
+                self.progress_bar.setMaximum(total)
+                self.progress_bar.setValue(total)
+                self.progress_bar.setFormat(f'{total}/{total}')
             self._populate_jump_menu()
             self._update_buttons()
             return
-        self.label_current.setText(
-            f"{learner.vorname} {learner.nachname} ({self.controller.current + 1}/{len(self.controller.learners)})"
-        )
+
+        name_text = f"{learner.vorname} {learner.nachname} ({done + 1}/{total})"
+        self.label_current.setText(name_text)
+
+        if learner.is_new:
+            # Visual distinction: blue label + tooltip explaining the save location.
+            self.label_current.setStyleSheet('font-size:16px; color: #0078d4;')
+            self.label_current.setToolTip('Neue Person – wird im Ordner "Neue Lernende" gespeichert')
+        else:
+            self.label_current.setStyleSheet('font-size:16px;')
+            self.label_current.setToolTip('')
+
         next_l = self.controller.next_learner()
         if next_l:
             self.label_upcoming.setText(f"{next_l.vorname} {next_l.nachname}")
         else:
             self.label_upcoming.setText('')
+
+        # Update progress bar
+        self.progress_bar.setVisible(total > 0)
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(done)
+        self.progress_bar.setFormat(f'{done}/{total}')
+
         self._populate_jump_menu()
         self._update_buttons()
 
@@ -248,8 +306,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if index <= self.controller.current or index >= len(self.controller.learners):
             return
         # Remember current position so we can resume after processing the
-        # selected learner. When the capture is finished we always return to
-        # the first learner that has not yet been photographed.
+        # selected learner.
         self._jump_return = self.controller.current
         self.controller.current = index
         self.show_next()
@@ -285,8 +342,6 @@ class MainWindow(QtWidgets.QMainWindow):
         location = self.cmb_location.currentText()
 
         def task():
-            # Delegate the actual capture process to the controller so that
-            # filenames are determined solely based on the provided *learner*.
             return self.controller.capture(learner, location)
 
         if hasattr(QtConcurrent, 'run'):
@@ -334,11 +389,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._after_learner_done()
         else:
             raw_path.unlink(missing_ok=True)
-            # Preserve the currently selected learner when retrying a
-            # capture so that manually chosen entries (via the drop-down
-            # menu) remain active until a photo is accepted.  The
-            # ``_jump_return`` index is kept so that, once the capture is
-            # confirmed, normal order can resume.
             self.show_next()
             self._set_busy(False)
 
@@ -352,9 +402,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _after_learner_done(self):
         if getattr(self, '_jump_return', None) is not None:
-            # The user temporarily jumped to a different learner. Remove the
-            # processed learner and return to the original position so that the
-            # workflow can continue with the first unfinished entry.
             del self.controller.learners[self.controller.current]
             self.controller.current = self._jump_return
             self._jump_return = None
@@ -494,8 +541,8 @@ class MainWindow(QtWidgets.QMainWindow):
         lbl.setPixmap(pix.scaled(self.preview.size(), QtCore.Qt.KeepAspectRatio))
         vbox.addWidget(lbl)
         h = QtWidgets.QHBoxLayout()
-        retry = QtWidgets.QPushButton('Erneut fotografieren\n[Esc]')
-        ok_btn = QtWidgets.QPushButton('OK\n[Leertaste]')
+        retry = QtWidgets.QPushButton('Erneut fotografieren  [Esc]')
+        ok_btn = QtWidgets.QPushButton('OK  [Leertaste]')
         h.addWidget(retry)
         h.addWidget(ok_btn)
         vbox.addLayout(h)
@@ -511,7 +558,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.controller.camera, 'switch_camera'):
             try:
                 self.controller.switch_camera()
-                self.preview.set_camera(self.controller.camera)
+                self.camera = self.controller.camera
+                self.preview.set_camera(self.camera)
             except Exception as e:
                 self._notify('Kamera', str(e), level='warning')
 
@@ -527,10 +575,9 @@ class MainWindow(QtWidgets.QMainWindow):
         before_overlay = self.settings.overlay.image
         if dlg.exec() == QtWidgets.QDialog.Accepted:
             if self.settings.kamera.backend != before_backend:
-                self.camera.stop_liveview()
-                self.camera = self._init_camera()
-                if hasattr(self.camera, 'start_liveview'):
-                    self.camera.start_liveview()
+                # Delegate full camera restart to the controller so there is
+                # a single source of truth for camera initialisation.
+                self.camera = self.controller.restart_camera()
                 self.preview.set_camera(self.camera)
             if self.settings.overlay.image != before_overlay:
                 self.preview.set_overlay_image(self.settings.overlay.image)
@@ -547,4 +594,4 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_search_class.setEnabled(
             bool(getattr(self.controller, 'current_classes', [])) and not busy
         )
-        self.btn_jump_to.setEnabled(more and not busy and bool(self.btn_jump_to.menu().actions()))
+        self.btn_jump_to.setEnabled(more and not busy and bool(self.btn_jump_to.menu() and self.btn_jump_to.menu().actions()))
