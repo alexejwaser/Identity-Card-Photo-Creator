@@ -310,7 +310,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if learner.is_new:
             # Visual distinction: blue label + tooltip explaining the save location.
             self.label_current.setStyleSheet('font-size:16px; color: #0078d4;')
-            self.label_current.setToolTip('Neue Person – wird im Ordner "Neue Lernende" gespeichert')
+            self.label_current.setToolTip(
+                f'Neue Person – wird gespeichert in: {self.settings.neueLernendeBasisPfad}'
+            )
         else:
             self.label_current.setStyleSheet('font-size:16px;')
             self.label_current.setToolTip('')
