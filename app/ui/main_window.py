@@ -8,13 +8,14 @@ from datetime import datetime
 import logging
 import psutil
 
-from ..core.config.settings import Settings
+from ..core.config.settings import Settings, CONFIG_DIR
 from ..core.controller import MainController
 from ..core.excel.reader import ExcelReader, Learner
 from ..core.excel.missed_writer import MissedWriter, MissedEntry
 from ..core.imaging.processor import process_image
 from .settings_dialog import SettingsDialog
 from .class_search_dialog import ClassSearchDialog
+from .onboarding_dialog import OnboardingDialog
 from .widgets import ControlPanel
 
 
@@ -39,6 +40,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._setup_ui()
         if hasattr(self.camera, "start_liveview"):
             self.camera.start_liveview()
+        self._update_camera_banner()
+        self._maybe_show_onboarding()
 
     @property
     def reader(self):
@@ -80,6 +83,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_settings.setIcon(icon)
         self.btn_settings.setToolTip('Einstellungen')
 
+        self.btn_help = QtWidgets.QPushButton('?')
+        self.btn_help.setFixedWidth(28)
+        self.btn_help.setToolTip('Kurzanleitung anzeigen')
+        self.btn_help.clicked.connect(self.show_onboarding)
+        self.controls.layout().addWidget(self.btn_help)
+
         # Tooltips for keyboard shortcuts (cleaner than baking them into labels)
         self.btn_capture.setToolTip('Leertaste')
         self.btn_skip.setToolTip('S')
@@ -96,6 +105,16 @@ class MainWindow(QtWidgets.QMainWindow):
         preview_layout = QtWidgets.QVBoxLayout()
         preview_layout.setSpacing(8)
 
+        # Persistent warning shown whenever the real camera failed to open and
+        # the app silently fell back to the simulator (placeholder images).
+        self.label_camera_banner = QtWidgets.QLabel('')
+        self.label_camera_banner.setWordWrap(True)
+        self.label_camera_banner.setStyleSheet(
+            'background:#d32f2f; color:white; padding:6px; border-radius:4px; font-weight:bold;'
+        )
+        self.label_camera_banner.setVisible(False)
+        preview_layout.addWidget(self.label_camera_banner)
+
         # Current / next learner labels
         name_layout = QtWidgets.QHBoxLayout()
         self.label_current = QtWidgets.QLabel('')
@@ -108,6 +127,13 @@ class MainWindow(QtWidgets.QMainWindow):
         name_layout.addStretch()
         name_layout.addWidget(self.label_upcoming)
         preview_layout.addLayout(name_layout)
+
+        # Shown only while the operator has jumped ahead to a specific
+        # person out of order, so it's obvious the queue will snap back.
+        self.label_jump_status = QtWidgets.QLabel('')
+        self.label_jump_status.setStyleSheet('color:#0078d4; font-size:12px;')
+        self.label_jump_status.setVisible(False)
+        preview_layout.addWidget(self.label_jump_status)
 
         # Progress bar showing photographed / total for the current class
         self.progress_bar = QtWidgets.QProgressBar()
@@ -128,6 +154,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_switch_camera.setToolTip('C')
         self.btn_switch_camera.setFixedWidth(140)
         preview_layout.addWidget(self.btn_switch_camera)
+
+        # Always-visible shortcut legend so a new operator never has to
+        # discover keyboard shortcuts via hover tooltips.
+        self.label_shortcuts = QtWidgets.QLabel(
+            '[Leertaste] Foto aufnehmen    [S] Überspringen    '
+            '[A] Neue Person    [F] Fertig    [C] Kamera wechseln'
+        )
+        self.label_shortcuts.setStyleSheet('color: gray; font-size:11px;')
+        self.label_shortcuts.setAlignment(QtCore.Qt.AlignCenter)
+        preview_layout.addWidget(self.label_shortcuts)
+
         layout.addLayout(preview_layout)
 
         self.setStyleSheet(
@@ -223,14 +260,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         skip_photographed = False
         if already_done > 0:
-            reply = QtWidgets.QMessageBox.question(
-                self,
-                'Bereits fotografiert',
+            box = QtWidgets.QMessageBox(self)
+            box.setWindowTitle('Bereits fotografiert')
+            box.setText(
                 f'{already_done} von {len(all_learners)} Lernenden wurden bereits fotografiert.\n'
-                'Sollen diese übersprungen werden?',
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                'Sollen diese übersprungen werden?'
             )
-            skip_photographed = (reply == QtWidgets.QMessageBox.Yes)
+            skip_btn = box.addButton('Ja, überspringen', QtWidgets.QMessageBox.YesRole)
+            box.addButton('Nein, alle anzeigen', QtWidgets.QMessageBox.NoRole)
+            box.exec()
+            skip_photographed = (box.clickedButton() is skip_btn)
 
         self.controller.learners_for_class(location, class_name, skip_photographed=skip_photographed)
 
@@ -297,19 +336,55 @@ class MainWindow(QtWidgets.QMainWindow):
             menu = QtWidgets.QMenu(self.btn_jump_to)
             self.btn_jump_to.setMenu(menu)
         menu.clear()
-        for idx, learner in enumerate(self.controller.learners[self.controller.current:], start=self.controller.current):
-            action = menu.addAction(f"{learner.vorname} {learner.nachname}")
-            action.triggered.connect(lambda _, i=idx: self.jump_to(i))
-        self.btn_jump_to.setEnabled(bool(menu.actions()) and not getattr(self, 'busy', False))
+        # Only one jump can be active at a time (self._jump_return holds a
+        # single return position, not a stack) - block further jumps until
+        # the operator has finished with the person they jumped to.
+        if self._jump_return is None:
+            for idx, learner in enumerate(self.controller.learners[self.controller.current:], start=self.controller.current):
+                action = menu.addAction(f"{learner.vorname} {learner.nachname}")
+                action.triggered.connect(lambda _, i=idx: self.jump_to(i))
+        self.btn_jump_to.setEnabled(
+            bool(menu.actions()) and not getattr(self, 'busy', False) and self._jump_return is None
+        )
 
     def jump_to(self, index: int):
-        if index <= self.controller.current or index >= len(self.controller.learners):
+        if self._jump_return is not None or index <= self.controller.current or index >= len(self.controller.learners):
             return
         # Remember current position so we can resume after processing the
         # selected learner.
+        return_learner = self.controller.learners[self.controller.current]
         self._jump_return = self.controller.current
         self.controller.current = index
+        self.label_jump_status.setText(
+            f'↩ Zurück zu {return_learner.vorname} {return_learner.nachname} nach dieser Aufnahme'
+        )
+        self.label_jump_status.setVisible(True)
         self.show_next()
+
+    def show_onboarding(self):
+        OnboardingDialog(self).exec()
+
+    def _maybe_show_onboarding(self):
+        marker = CONFIG_DIR / '.onboarded'
+        if marker.exists():
+            return
+        self.show_onboarding()
+        try:
+            marker.touch()
+        except OSError:
+            pass
+
+    def _update_camera_banner(self):
+        """Show a persistent warning if a real camera failed to open and the
+        app is running on the simulator (placeholder photos) as a fallback."""
+        fallback = getattr(self.controller, 'camera_fallback', False)
+        if fallback:
+            reason = getattr(self.controller, 'camera_fallback_reason', '')
+            self.label_camera_banner.setText(
+                '⚠ Keine Kamera erkannt — es werden Platzhalterbilder gespeichert!'
+                + (f' ({reason})' if reason else '')
+            )
+        self.label_camera_banner.setVisible(fallback)
 
     def _excel_running(self) -> bool:
         for proc in psutil.process_iter(['name']):
@@ -405,10 +480,44 @@ class MainWindow(QtWidgets.QMainWindow):
             del self.controller.learners[self.controller.current]
             self.controller.current = self._jump_return
             self._jump_return = None
+            self.label_jump_status.setVisible(False)
         else:
             self.controller.advance()
         self.show_next()
         self._set_busy(False)
+
+    def _ask_skip_reason(self) -> tuple[str, bool]:
+        """Single-step reason picker: a combo box plus a free-text field that
+        only matters when 'Anderer Grund...' is selected. Replaces the old
+        two-sequential-dialogs flow, which lost the whole skip if the
+        operator accidentally cancelled the second dialog."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle('Grund')
+        form = QtWidgets.QFormLayout(dlg)
+        combo = QtWidgets.QComboBox()
+        combo.addItems(['Krank', 'Verweigert', 'Anderer Grund...'])
+        form.addRow('Grund für das Überspringen', combo)
+        other_edit = QtWidgets.QLineEdit()
+        other_edit.setPlaceholderText('Grund eingeben...')
+        other_edit.setEnabled(False)
+        form.addRow(other_edit)
+
+        def _on_change(text):
+            other_edit.setEnabled(text == 'Anderer Grund...')
+
+        combo.currentTextChanged.connect(_on_change)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        form.addRow(buttons)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        if dlg.exec() != QtWidgets.QDialog.Accepted:
+            return '', False
+        reason = combo.currentText()
+        if reason == 'Anderer Grund...':
+            reason = other_edit.text().strip()
+            if not reason:
+                return '', False
+        return reason, True
 
     def skip_learner(self):
         if self.controller.current >= len(self.controller.learners):
@@ -420,25 +529,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 level='warning',
             )
             return
-        reasons = ['Krank', 'Verweigert', 'Anderer Grund...']
-        reason, ok = QtWidgets.QInputDialog.getItem(
-            self,
-            'Grund',
-            'Grund für das Überspringen wählen:',
-            reasons,
-            0,
-            False,
-        )
+        reason, ok = self._ask_skip_reason()
         if not ok:
             return
-        if reason == 'Anderer Grund...':
-            reason, ok = QtWidgets.QInputDialog.getText(
-                self,
-                'Grund',
-                'Grund für das Überspringen eingeben:',
-            )
-            if not ok:
-                return
         learner = self.controller.learners[self.controller.current]
         missed = MissedWriter(self.settings.missedPath)
         entry = MissedEntry(
@@ -480,9 +573,7 @@ class MainWindow(QtWidgets.QMainWindow):
             errors = task()
             for err in errors:
                 self._notify('Excel', err, level='warning')
-            self.controller.advance()
-            self.show_next()
-            self._set_busy(False)
+            self._after_learner_done()
 
     def _skip_finished(self, watcher: QtCore.QFutureWatcher):
         errors = watcher.result()
@@ -491,6 +582,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self._after_learner_done()
 
     def finish_class(self):
+        remaining = len(self.controller.learners) - self.controller.current
+        if remaining > 0:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                'Noch nicht fertig',
+                f'{remaining} Lernende(r) wurden noch nicht fotografiert.\n'
+                'Klasse trotzdem abschliessen?',
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
         location = self.controls.cmb_location.currentText()
         klasse = self.controls.cmb_class.currentText()
         zip_paths, out_dir = self.controller.finish(location, klasse)
@@ -569,7 +672,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def open_settings(self):
         dlg = SettingsDialog(
-            self.settings, self, logger=self.logger.getChild('SettingsDialog')
+            self.settings, self, logger=self.logger.getChild('SettingsDialog'), reader=self.reader
         )
         before_backend = self.settings.kamera.backend
         before_overlay = self.settings.overlay.image
@@ -577,8 +680,13 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.settings.kamera.backend != before_backend:
                 # Delegate full camera restart to the controller so there is
                 # a single source of truth for camera initialisation.
-                self.camera = self.controller.restart_camera()
+                try:
+                    self.camera = self.controller.restart_camera()
+                except Exception as e:
+                    self._notify('Kamera', str(e), level='warning')
+                    self.camera = self.controller.camera
                 self.preview.set_camera(self.camera)
+                self._update_camera_banner()
             if self.settings.overlay.image != before_overlay:
                 self.preview.set_overlay_image(self.settings.overlay.image)
         self._update_buttons()

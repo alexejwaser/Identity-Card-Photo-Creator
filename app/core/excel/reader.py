@@ -30,6 +30,19 @@ class ExcelReader:
     def locations(self) -> List[str]:
         return self.wb.sheetnames
 
+    def headers(self) -> dict:
+        """Read row 1 of the first sheet and return {header_text: column_letter}.
+
+        Used to offer a friendlier column picker in Settings instead of
+        requiring the operator to know raw Excel column letters.
+        """
+        sheet = self.wb[self.wb.sheetnames[0]]
+        result = {}
+        for cell in next(sheet.iter_rows(min_row=1, max_row=1)):
+            if cell.value:
+                result[str(cell.value).strip()] = cell.column_letter
+        return result
+
     def classes_for_location(self, location: str) -> List[str]:
         sheet = self.wb[location]
         col = self.mapping['klasse']

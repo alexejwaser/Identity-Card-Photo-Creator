@@ -18,6 +18,8 @@ class MainController:
 
     def __init__(self, settings: Settings):
         self.settings = settings
+        self.camera_fallback: bool = False
+        self.camera_fallback_reason: str = ""
         self.camera = self._init_camera()
         self.reader: Optional[ExcelReader] = None
         self.learners: List[Learner] = []
@@ -28,6 +30,8 @@ class MainController:
     def _init_camera(self):
         backend = getattr(self.settings.kamera, "backend", "opencv")
         rotation = getattr(self.settings.kamera, "rotation", 270)
+        self.camera_fallback = False
+        self.camera_fallback_reason = ""
         cam = None
         if backend == "gphoto2" and QtCore.QStandardPaths.findExecutable("gphoto2"):
             cam = GPhoto2Camera()
@@ -37,9 +41,12 @@ class MainController:
             # Default: OpenCV (Webcam-Modus, z.B. Canon EOS M50 per USB)
             try:
                 cam = OpenCVCamera(1, rotation=rotation)
+                cam.start_liveview()
                 self.current_cam_id = 1
-            except Exception:
+            except Exception as e:
                 cam = None
+                self.camera_fallback = True
+                self.camera_fallback_reason = str(e)
         if cam is None:
             cam = SimulatorCamera()
         return cam

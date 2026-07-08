@@ -8,12 +8,22 @@ from ..core.config.settings import Settings, ExcelMapping
 
 class SettingsDialog(QtWidgets.QDialog):
     def __init__(
-        self, settings: Settings, parent=None, logger: logging.Logger | None = None
+        self,
+        settings: Settings,
+        parent=None,
+        logger: logging.Logger | None = None,
+        reader=None,
     ):
         super().__init__(parent)
         self.logger = logger or logging.getLogger(type(self).__name__)
         self.settings = settings
         self.setWindowTitle('Einstellungen')
+        self._headers = {}
+        if reader is not None:
+            try:
+                self._headers = reader.headers()
+            except Exception as e:
+                self._notify('Excel-Spalten', str(e), level='warning')
 
         form = QtWidgets.QFormLayout(self)
 
@@ -69,26 +79,38 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow('Overlay-Bild', h_overlay)
         self.btn_overlay.clicked.connect(self.choose_overlay)
 
-        # Excel column mapping
+        # Excel column mapping. If a workbook is currently loaded, offer a
+        # friendly dropdown of its actual header names instead of requiring
+        # the operator to know raw Excel column letters.
         emap = self.settings.excelMapping
-        self.ed_class = QtWidgets.QLineEdit(emap.klasse)
-        self.ed_last = QtWidgets.QLineEdit(emap.nachname)
-        self.ed_first = QtWidgets.QLineEdit(emap.vorname)
-        self.ed_id = QtWidgets.QLineEdit(emap.schuelerId)
-        self.ed_photo = QtWidgets.QLineEdit(emap.fotografiert)
-        self.ed_date = QtWidgets.QLineEdit(emap.aufnahmedatum)
-        self.ed_reason = QtWidgets.QLineEdit(emap.grund)
-        for ed in [self.ed_class, self.ed_last, self.ed_first, self.ed_id,
-                   self.ed_photo, self.ed_date, self.ed_reason]:
-            ed.setMaximumWidth(60)
-            ed.setToolTip('Spaltenbuchstabe der Excel-Datei, z.B. "A", "B" …')
-        form.addRow('Spalte Klasse', self.ed_class)
-        form.addRow('Spalte Nachname', self.ed_last)
-        form.addRow('Spalte Vorname', self.ed_first)
-        form.addRow('Spalte SchülerID', self.ed_id)
-        form.addRow('Spalte Fotografiert', self.ed_photo)
-        form.addRow('Spalte Aufnahmedatum', self.ed_date)
-        form.addRow('Spalte Grund', self.ed_reason)
+        mapping_fields = [
+            ('klasse', 'Spalte Klasse', emap.klasse),
+            ('nachname', 'Spalte Nachname', emap.nachname),
+            ('vorname', 'Spalte Vorname', emap.vorname),
+            ('schuelerId', 'Spalte SchülerID', emap.schuelerId),
+            ('fotografiert', 'Spalte Fotografiert', emap.fotografiert),
+            ('aufnahmedatum', 'Spalte Aufnahmedatum', emap.aufnahmedatum),
+            ('grund', 'Spalte Grund', emap.grund),
+        ]
+        self._mapping_widgets = {}
+        # letter -> header text, for pre-selecting the combo to the current mapping
+        letter_to_header = {v: k for k, v in self._headers.items()}
+        for key, label, current_letter in mapping_fields:
+            if self._headers:
+                combo = QtWidgets.QComboBox()
+                combo.addItems(list(self._headers.keys()))
+                current_header = letter_to_header.get(current_letter)
+                if current_header:
+                    combo.setCurrentText(current_header)
+                combo.setToolTip('Spalte aus der geladenen Excel-Datei auswählen')
+                self._mapping_widgets[key] = combo
+                form.addRow(label, combo)
+            else:
+                ed = QtWidgets.QLineEdit(current_letter)
+                ed.setMaximumWidth(60)
+                ed.setToolTip('Spaltenbuchstabe der Excel-Datei, z.B. "A", "B" … (keine Excel-Datei geladen)')
+                self._mapping_widgets[key] = ed
+                form.addRow(label, ed)
 
         self.buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
@@ -143,14 +165,22 @@ class SettingsDialog(QtWidgets.QDialog):
         backend = ['opencv', 'gphoto2', 'simulator'][backend_idx]
         self.settings.kamera.backend = backend
         self.settings.kamera.rotation = [0, 90, 180, 270][self.cmb_rotation.currentIndex()]
+
+        def _column_letter(key: str, default: str) -> str:
+            widget = self._mapping_widgets[key]
+            if isinstance(widget, QtWidgets.QComboBox):
+                header = widget.currentText()
+                return self._headers.get(header, default).upper()
+            return widget.text().upper() or default
+
         self.settings.excelMapping = ExcelMapping(
-            klasse=self.ed_class.text().upper() or 'A',
-            nachname=self.ed_last.text().upper() or 'B',
-            vorname=self.ed_first.text().upper() or 'C',
-            schuelerId=self.ed_id.text().upper() or 'D',
-            fotografiert=self.ed_photo.text().upper() or 'E',
-            aufnahmedatum=self.ed_date.text().upper() or 'F',
-            grund=self.ed_reason.text().upper() or 'G',
+            klasse=_column_letter('klasse', 'A'),
+            nachname=_column_letter('nachname', 'B'),
+            vorname=_column_letter('vorname', 'C'),
+            schuelerId=_column_letter('schuelerId', 'D'),
+            fotografiert=_column_letter('fotografiert', 'E'),
+            aufnahmedatum=_column_letter('aufnahmedatum', 'F'),
+            grund=_column_letter('grund', 'G'),
         )
         self.settings.overlay.image = Path(self.overlay_path) if self.overlay_path else None
         self.settings.ausgabeBasisPfad = Path(self.output_dir)
