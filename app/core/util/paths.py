@@ -30,9 +30,13 @@ def class_output_dir(base: Union[str, Path], location: str, class_name: str) -> 
 
 
 def new_learner_dir(base: Union[str, Path], location: str, class_name: str) -> Path:
-    """Return folder for additional learners."""
-    base_path = Path(base) / 'Neue Lernende'
-    return class_output_dir(base_path, location, class_name)
+    """Return folder for additional (walk-in) learners under *base*.
+
+    *base* is expected to already be the dedicated "new learners" base path
+    (``Settings.neueLernendeBasisPfad``), separate from the main class-photo
+    output path so it can be configured independently.
+    """
+    return class_output_dir(base, location, class_name)
 
 
 def unique_file_path(directory: Union[str, Path], filename: str) -> Path:

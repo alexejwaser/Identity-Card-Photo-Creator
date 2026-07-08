@@ -4,6 +4,7 @@
 from pathlib import Path
 import json
 import os
+import sys
 from typing import Tuple, Optional
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
@@ -13,7 +14,35 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 # Storage locations
 # ---------------------------------------------------------------------------
 
-CONFIG_DIR = Path(os.getenv("APPDATA", str(Path.home()))) / "LegicCardCreator"
+def _app_base_dir() -> Path:
+    """Directory containing the running .exe (frozen build), or this file's
+    project root when running from source."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parents[3]
+
+
+def _resolve_config_dir() -> Path:
+    """Resolve where settings.json (and related config files) live.
+
+    Priority:
+    1. LEGICCARD_CONFIG_DIR environment variable, if set.
+    2. Portable mode: a 'config' folder placed next to the .exe by the
+       operator (e.g. on a shared/USB drive so settings travel with the app).
+    3. Default: %APPDATA%\\LegicCardCreator (falls back to the home
+       directory on non-Windows platforms).
+    """
+    env_override = os.getenv("LEGICCARD_CONFIG_DIR")
+    if env_override:
+        return Path(env_override)
+    if getattr(sys, 'frozen', False):
+        portable_dir = _app_base_dir() / "config"
+        if portable_dir.is_dir():
+            return portable_dir
+    return Path(os.getenv("APPDATA", str(Path.home()))) / "LegicCardCreator"
+
+
+CONFIG_DIR = _resolve_config_dir()
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = CONFIG_DIR / "settings.json"
 
@@ -23,12 +52,18 @@ def _default_output_path() -> Path:
     return Path(os.getenv("USERPROFILE", str(Path.home()))) / "Pictures" / "LegicCardCreator"
 
 
+def _default_new_learner_path() -> Path:
+    """Return the default folder for walk-in students not on the roster."""
+    return _default_output_path() / "Neue Lernende"
+
+
 # ---------------------------------------------------------------------------
 # First-run defaults (used when settings.json does not yet exist)
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
     'ausgabeBasisPfad': str(_default_output_path()),
+    'neueLernendeBasisPfad': str(_default_new_learner_path()),
     'missedPath': str(CONFIG_DIR / 'Verpasste_Termine.xlsx'),
     'bild': {
         'breite': 1200,
@@ -140,6 +175,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     ausgabeBasisPfad: Path = Field(default_factory=_default_output_path)
+    neueLernendeBasisPfad: Path = Field(default_factory=_default_new_learner_path)
     missedPath: Path = Field(default_factory=lambda: CONFIG_DIR / 'Verpasste_Termine.xlsx')
     bild: BildSettings = Field(default_factory=BildSettings)
     overlay: OverlaySettings = Field(default_factory=OverlaySettings)
@@ -160,6 +196,7 @@ class Settings(BaseModel):
     def save(self, path: Path = CONFIG_PATH) -> None:
         data = self.model_dump()
         data['ausgabeBasisPfad'] = str(data['ausgabeBasisPfad'])
+        data['neueLernendeBasisPfad'] = str(data['neueLernendeBasisPfad'])
         data['missedPath'] = str(data['missedPath'])
         ratio = data['bild']['seitenverhaeltnis']
         data['bild']['seitenverhaeltnis'] = f"{ratio[0]}:{ratio[1]}"

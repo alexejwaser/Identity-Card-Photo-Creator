@@ -1,9 +1,9 @@
 # app/ui/settings_dialog.py
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui, QtCore
 from pathlib import Path
 from pydantic import ValidationError
 import logging
-from ..core.config.settings import Settings, ExcelMapping
+from ..core.config.settings import Settings, ExcelMapping, CONFIG_PATH
 
 
 class SettingsDialog(QtWidgets.QDialog):
@@ -58,6 +58,35 @@ class SettingsDialog(QtWidgets.QDialog):
         h_out.addWidget(self.btn_output)
         form.addRow('Ausgabeordner', h_out)
         self.btn_output.clicked.connect(self.choose_output)
+
+        # base folder for walk-in students not on the roster ("Neue Lernende")
+        self.new_learner_dir = str(self.settings.neueLernendeBasisPfad)
+        self.lbl_new_learner = QtWidgets.QLabel(self.new_learner_dir)
+        self.lbl_new_learner.setWordWrap(True)
+        self.btn_new_learner = QtWidgets.QPushButton('Ordner wählen...')
+        h_new = QtWidgets.QHBoxLayout()
+        h_new.addWidget(self.lbl_new_learner, stretch=1)
+        h_new.addWidget(self.btn_new_learner)
+        form.addRow('Ordner für neue Lernende', h_new)
+        self.btn_new_learner.clicked.connect(self.choose_new_learner_dir)
+
+        # settings.json location (read-only; see LEGICCARD_CONFIG_DIR / portable
+        # "config" folder next to the .exe to relocate it)
+        self.lbl_config_path = QtWidgets.QLabel(str(CONFIG_PATH))
+        self.lbl_config_path.setWordWrap(True)
+        self.lbl_config_path.setToolTip(
+            'Um diesen Speicherort zu ändern: einen Ordner namens "config" neben\n'
+            'die LegicCardCreator.exe legen (Portable-Modus), oder die\n'
+            'Umgebungsvariable LEGICCARD_CONFIG_DIR setzen.'
+        )
+        btn_open_config = QtWidgets.QPushButton('Ordner öffnen')
+        btn_open_config.clicked.connect(
+            lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(CONFIG_PATH.parent)))
+        )
+        h_config = QtWidgets.QHBoxLayout()
+        h_config.addWidget(self.lbl_config_path, stretch=1)
+        h_config.addWidget(btn_open_config)
+        form.addRow('Konfigurationsdatei', h_config)
 
         # missed file path
         self.missed_path = str(self.settings.missedPath)
@@ -152,6 +181,12 @@ class SettingsDialog(QtWidgets.QDialog):
             self.output_dir = path
             self.lbl_output.setText(path)
 
+    def choose_new_learner_dir(self):
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Ordner wählen', self.new_learner_dir)
+        if path:
+            self.new_learner_dir = path
+            self.lbl_new_learner.setText(path)
+
     def choose_missed(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Datei wählen', self.missed_path, filter='Excel (*.xlsx)')
         if path:
@@ -184,6 +219,7 @@ class SettingsDialog(QtWidgets.QDialog):
         )
         self.settings.overlay.image = Path(self.overlay_path) if self.overlay_path else None
         self.settings.ausgabeBasisPfad = Path(self.output_dir)
+        self.settings.neueLernendeBasisPfad = Path(self.new_learner_dir)
         self.settings.missedPath = Path(self.missed_path)
         try:
             self.settings.save()

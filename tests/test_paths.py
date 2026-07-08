@@ -12,9 +12,11 @@ def test_class_output_dir(tmp_path):
     assert path == tmp_path / 'Standort' / 'Klasse'
 
 def test_new_learner_dir(tmp_path):
+    # new_learner_dir takes the dedicated "Neue Lernende" base path directly
+    # (Settings.neueLernendeBasisPfad), so no extra subfolder is appended here.
     path = new_learner_dir(str(tmp_path), 'Standort', 'Klasse')
     assert path.exists()
-    assert path == tmp_path / 'Neue Lernende' / 'Standort' / 'Klasse'
+    assert path == tmp_path / 'Standort' / 'Klasse'
 
 
 def test_unique_file_path(tmp_path):

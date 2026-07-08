@@ -120,7 +120,7 @@ class MainController:
 
     def capture(self, learner: Learner, location: str) -> Path:
         if learner.is_new:
-            out_dir = new_learner_dir(self.settings.ausgabeBasisPfad, location, learner.klasse)
+            out_dir = new_learner_dir(self.settings.neueLernendeBasisPfad, location, learner.klasse)
             raw_path = unique_file_path(out_dir, f"{learner.vorname}_{learner.nachname}.jpg")
         else:
             out_dir = class_output_dir(self.settings.ausgabeBasisPfad, location, learner.klasse)
