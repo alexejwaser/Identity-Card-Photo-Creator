@@ -58,5 +58,18 @@ Beim Abschluss einer Klasse werden alle Fotos automatisch zu einem ZIP-Archiv zu
 pytest
 ```
 
+## Windows-EXE bauen (GitHub Actions)
+Der Workflow **Build Windows release** (`.github/workflows/build-exe.yml`) baut automatisch eine Windows-Exe.
+
+Auslöser:
+- **Versions-Tag pushen**, z. B.:
+  ```bash
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+- oder **manuell**: Tab **Actions** → **Build Windows release** → **Run workflow**.
+
+Nach Abschluss unter **Artifacts** das Archiv **LegicCardCreator-windows** herunterladen; darin liegt der fertige `LegicCardCreator`-Ordner mit der `.exe`.
+
 ## Lizenz
 [MIT](LICENSE)
