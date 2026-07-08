@@ -30,15 +30,29 @@ class MissedWriter:
 
     def append(self, entry: MissedEntry) -> None:
         try:
-            self.ws.append([
-                entry.standort,
-                entry.klasse,
-                entry.nachname,
-                entry.vorname,
-                entry.schueler_id,
-                entry.datum,
-                entry.grund,
-            ])
+            # Update an existing row for the same person instead of adding a
+            # duplicate if they were skipped more than once in a session.
+            existing_row = None
+            for row in self.ws.iter_rows(min_row=2):
+                standort, klasse, _nachname, _vorname, schueler_id = (
+                    row[0].value, row[1].value, row[2].value, row[3].value, row[4].value,
+                )
+                if (standort, klasse, schueler_id) == (entry.standort, entry.klasse, entry.schueler_id):
+                    existing_row = row
+                    break
+            if existing_row is not None:
+                existing_row[5].value = entry.datum
+                existing_row[6].value = entry.grund
+            else:
+                self.ws.append([
+                    entry.standort,
+                    entry.klasse,
+                    entry.nachname,
+                    entry.vorname,
+                    entry.schueler_id,
+                    entry.datum,
+                    entry.grund,
+                ])
             self.wb.save(self.path)
         except Exception as e:
             raise IOError(f'Konnte Datei für verpasste Termine nicht speichern: {e}')

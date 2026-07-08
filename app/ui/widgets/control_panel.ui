@@ -30,32 +30,40 @@
    <item>
     <widget class="QPushButton" name="btn_capture">
      <property name="text">
-      <string>Foto aufnehmen
-[Leertaste]</string>
+      <string>Foto aufnehmen</string>
+     </property>
+     <property name="toolTip">
+      <string>Leertaste</string>
      </property>
     </widget>
    </item>
    <item>
     <widget class="QPushButton" name="btn_skip">
      <property name="text">
-      <string>Überspringen
-[S]</string>
+      <string>Überspringen</string>
+     </property>
+     <property name="toolTip">
+      <string>S</string>
      </property>
     </widget>
    </item>
    <item>
     <widget class="QPushButton" name="btn_add_person">
      <property name="text">
-      <string>Person hinzufügen
-[A]</string>
+      <string>Person hinzufügen</string>
+     </property>
+     <property name="toolTip">
+      <string>A</string>
      </property>
     </widget>
    </item>
    <item>
     <widget class="QPushButton" name="btn_finish">
      <property name="text">
-      <string>Fertig
-[F]</string>
+      <string>Fertig</string>
+     </property>
+     <property name="toolTip">
+      <string>F</string>
      </property>
     </widget>
    </item>
@@ -64,12 +72,18 @@
      <property name="text">
       <string></string>
      </property>
+     <property name="toolTip">
+      <string>Einstellungen</string>
+     </property>
     </widget>
    </item>
    <item>
     <widget class="QToolButton" name="btn_jump_to">
      <property name="text">
       <string>Person wählen</string>
+     </property>
+     <property name="toolTip">
+      <string>Direkt zu einer bestimmten Person springen</string>
      </property>
      <property name="popupMode">
       <enum>QToolButton::InstantPopup</enum>
