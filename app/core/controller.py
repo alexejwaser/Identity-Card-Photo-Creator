@@ -30,6 +30,7 @@ class MainController:
     def _init_camera(self):
         backend = getattr(self.settings.kamera, "backend", "opencv")
         rotation = getattr(self.settings.kamera, "rotation", 270)
+        device_index = getattr(self.settings.kamera, "deviceIndex", 1)
         self.camera_fallback = False
         self.camera_fallback_reason = ""
         cam = None
@@ -40,9 +41,8 @@ class MainController:
         else:
             # Default: OpenCV (Webcam-Modus, z.B. Canon EOS M50 per USB)
             try:
-                cam = OpenCVCamera(1, rotation=rotation)
+                cam = OpenCVCamera(device_index, rotation=rotation)
                 cam.start_liveview()
-                self.current_cam_id = 1
             except Exception as e:
                 cam = None
                 self.camera_fallback = True
@@ -58,11 +58,6 @@ class MainController:
         if hasattr(self.camera, "start_liveview"):
             self.camera.start_liveview()
         return self.camera
-
-    def switch_camera(self):
-        if hasattr(self.camera, "switch_camera"):
-            self.current_cam_id = getattr(self, "current_cam_id", 0) + 1
-            self.camera.switch_camera(self.current_cam_id)
 
     # excel handling ---------------------------------------------------------
     def load_excel(self, path: Path) -> List[str]:

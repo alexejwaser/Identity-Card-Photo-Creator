@@ -6,3 +6,4 @@ pytest
 pytest-qt
 psutil
 pydantic
+pygrabber; sys_platform == "win32"

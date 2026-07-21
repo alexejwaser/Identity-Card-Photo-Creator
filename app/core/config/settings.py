@@ -83,6 +83,7 @@ DEFAULTS = {
         'format': 'JPEG',
         'timeoutMs': 5000,
         'rotation': 270,
+        'deviceIndex': 1,
     },
     'zip': {'maxAnzahl': None, 'maxGroesseMB': None},
     'copyright': {'artist': '', 'copyright': ''},
@@ -146,6 +147,9 @@ class KameraSettings(BaseModel):
     # Wert für die Canon EOS M50 im Webcam-Modus, da der Sensor im
     # Querformat ausgibt aber ein Hochformat benötigt wird.
     rotation: int = 270
+    # Index des Kamera-Geräts (cv2.VideoCapture). Standard 1, da Index 0
+    # meist die eingebaute Laptop-Webcam ist, nicht die gewünschte externe.
+    deviceIndex: int = 1
 
 
 class ZipSettings(BaseModel):

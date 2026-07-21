@@ -9,6 +9,7 @@ class LiveViewWidget(QtWidgets.QWidget):
     def __init__(self, camera, fps: int = 20, parent=None):
         super().__init__(parent)
         self.camera = camera
+        self.crop_aspect: tuple[int, int] | None = None
         self.label = QtWidgets.QLabel()
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         self.label.setStyleSheet("background-color: black;")
@@ -60,7 +61,29 @@ class LiveViewWidget(QtWidgets.QWidget):
     def set_overlay_image(self, path: str | Path | None):
         self.overlay.set_image(path)
 
+    def set_crop_aspect(self, aspect: tuple[int, int] | None):
+        """Crop every displayed frame to a centered *width:height* region,
+        or show the full frame when *aspect* is ``None``. Shows the operator
+        exactly what part of the live feed ends up in the final saved photo,
+        instead of the full (often wider) sensor field of view."""
+        self.crop_aspect = aspect if aspect and aspect[0] > 0 and aspect[1] > 0 else None
+
+    def _crop_to_aspect(self, img: QtGui.QImage) -> QtGui.QImage:
+        if not self.crop_aspect:
+            return img
+        w, h = img.width(), img.height()
+        target_w = w
+        target_h = int(w * self.crop_aspect[1] / self.crop_aspect[0])
+        if target_h > h:
+            target_h = h
+            target_w = int(h * self.crop_aspect[0] / self.crop_aspect[1])
+        x = (w - target_w) // 2
+        y = (h - target_h) // 2
+        return img.copy(x, y, target_w, target_h)
+
     def update_frame(self):
+        if self.camera is None:
+            return
         try:
             if hasattr(self.camera, 'get_preview_qimage'):
                 img = self.camera.get_preview_qimage()
@@ -74,6 +97,7 @@ class LiveViewWidget(QtWidgets.QWidget):
                 finally:
                     path.unlink(missing_ok=True)
             if not img.isNull():
+                img = self._crop_to_aspect(img)
                 self.frame_ratio = img.width() / img.height()
                 self._update_label_geometry()
                 pix = QtGui.QPixmap.fromImage(img).scaled(

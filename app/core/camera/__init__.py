@@ -2,6 +2,7 @@ from .base import BaseCamera, CameraError
 from .simulator import SimulatorCamera
 from .gphoto2_backend import GPhoto2Camera
 from .opencv_backend import OpenCVCamera
+from .enumerate import list_cameras, CameraDevice
 
 __all__ = [
     'BaseCamera',
@@ -9,4 +10,6 @@ __all__ = [
     'SimulatorCamera',
     'GPhoto2Camera',
     'OpenCVCamera',
+    'list_cameras',
+    'CameraDevice',
 ]

@@ -68,8 +68,3 @@ class OpenCVCamera(BaseCamera):
         bytes_per_line = ch * w
         img = QtGui.QImage(rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
         return img.copy()
-
-    def switch_camera(self, camera_id: int):
-        self.stop_liveview()
-        self.camera_id = camera_id
-        self.start_liveview()

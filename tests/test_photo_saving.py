@@ -46,9 +46,6 @@ class DummyCamera:
         p.write_bytes(b"data")
         self.captured.append(p)
 
-    def switch_camera(self, index):
-        pass
-
 
 @pytest.fixture
 def dummy_camera():
