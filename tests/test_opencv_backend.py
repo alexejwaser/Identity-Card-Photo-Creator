@@ -118,6 +118,59 @@ def test_dark_frames_are_not_treated_as_errors(monkeypatch):
     assert not cap.released
 
 
+def test_frozen_identical_frame_triggers_single_reopen(monkeypatch):
+    """A byte-for-byte unchanging feed (e.g. Canon EOS Webcam Utility's
+    placeholder graphic stuck forever because it never picked up the
+    physical camera) should eventually trigger a reopen - distinct from,
+    and independent of, dark frames being otherwise treated as fine."""
+    _patch_backends(monkeypatch, ["ANY"])
+    monkeypatch.setattr(backend_mod, "_STUCK_FRAME_SECONDS", 0.0)
+    monkeypatch.setattr(backend_mod, "_REOPEN_COOLDOWN_SECONDS", 0.0)
+    caps = []
+
+    def factory(index, backend):
+        cap = FakeCapture(index, backend, reads=[(True, _black_frame())])
+        caps.append(cap)
+        return cap
+
+    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", factory)
+
+    cam = OpenCVCamera(0)
+    cam.start_liveview()
+    first_cap = caps[0]
+
+    cam.get_preview_qimage()  # establishes the baseline frame
+    cam.get_preview_qimage()  # identical frame again -> treated as frozen
+
+    assert first_cap.released
+    assert len(caps) == 2
+
+
+def test_frozen_frame_does_not_raise_if_reopen_fails(monkeypatch):
+    """Even if the reopen attempt itself fails, the operator should still
+    get the last available frame back rather than an error - we already
+    know something is wrong; flapping to an error message on top doesn't
+    help and losing the last valid frame doesn't either."""
+    _patch_backends(monkeypatch, ["ANY"])
+    monkeypatch.setattr(backend_mod, "_STUCK_FRAME_SECONDS", 0.0)
+    monkeypatch.setattr(backend_mod, "_REOPEN_COOLDOWN_SECONDS", 0.0)
+    calls = {"n": 0}
+
+    def factory(index, backend):
+        calls["n"] += 1
+        # First open succeeds; the reopen attempt fails to reopen at all.
+        return FakeCapture(index, backend, opens=(calls["n"] == 1), reads=[(True, _black_frame())])
+
+    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", factory)
+
+    cam = OpenCVCamera(0)
+    cam.start_liveview()
+
+    cam.get_preview_qimage()
+    img = cam.get_preview_qimage()
+    assert not img.isNull()
+
+
 def test_persistent_read_failures_trigger_reopen(monkeypatch):
     _patch_backends(monkeypatch, ["ANY"])
     caps = []

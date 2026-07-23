@@ -6,6 +6,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 import cv2
+import numpy as np
 from PySide6 import QtGui
 from .base import BaseCamera, CameraError
 
@@ -34,6 +35,16 @@ _MAX_CONSECUTIVE_BAD_FRAMES = 5
 # doesn't get its capture graph torn down and rebuilt dozens of times a
 # second for no benefit.
 _REOPEN_COOLDOWN_SECONDS = 5.0
+# How long a byte-for-byte identical frame has to persist before it's
+# treated as frozen rather than a live (if momentarily still) scene. Real
+# camera sensors virtually always show frame-to-frame noise even pointed at
+# a static subject, so an exact match held this long is a strong signal the
+# feed is a static graphic - e.g. Canon EOS Webcam Utility's own "connect
+# your camera" placeholder never clearing because it isn't detecting the
+# physical camera - rather than genuine (if unchanging) video. Long enough
+# to never mistake the normal few-second placeholder-to-live-video handoff
+# for a stuck feed.
+_STUCK_FRAME_SECONDS = 20.0
 # Cap on how long any caller (GUI thread or background task) waits for the
 # camera lock. A live-preview read can legitimately take a few seconds when
 # the driver is having a bad moment, but if cv2 ever truly wedges inside a
@@ -93,6 +104,8 @@ class OpenCVCamera(BaseCamera):
         self.backend_used = None
         self._consecutive_bad_frames = 0
         self._last_reopen_time = 0.0
+        self._last_frame = None
+        self._frame_unchanged_since = None
         # Guards every access to self.cap: the live preview (background task)
         # and an actual photo capture (also a background task) can otherwise
         # land on cap.read()/cap.release() at the same time, which is not
@@ -140,6 +153,8 @@ class OpenCVCamera(BaseCamera):
                     self.cap = cap
                     self.backend_used = backend
                     self._consecutive_bad_frames = 0
+                    self._last_frame = None
+                    self._frame_unchanged_since = None
                     logger.info(
                         "Kamera %s geoeffnet (Backend %s)", self.camera_id, backend
                     )
@@ -173,13 +188,50 @@ class OpenCVCamera(BaseCamera):
             logger.info("Neuverbindung zu Kamera %s erfolgreich", self.camera_id)
         self._consecutive_bad_frames = 0
 
+    def _check_frozen(self, frame):
+        """Detect a byte-for-byte static feed (see _STUCK_FRAME_SECONDS) and
+        attempt a single reopen. A fresh connection can pick up live video
+        that never appeared on the existing one - e.g. Canon EOS Webcam
+        Utility's own hand-off from its placeholder graphic to the physical
+        camera can leave an already-open capture graph stuck on the
+        placeholder's format. Never raises: if the reopen doesn't help, the
+        operator still sees whatever frame is available rather than an
+        outright error."""
+        now = time.monotonic()
+        if self._last_frame is None or not np.array_equal(frame, self._last_frame):
+            self._last_frame = frame
+            self._frame_unchanged_since = now
+            return frame
+
+        if (
+            now - self._frame_unchanged_since >= _STUCK_FRAME_SECONDS
+            and now - self._last_reopen_time >= _REOPEN_COOLDOWN_SECONDS
+        ):
+            logger.warning(
+                "Kamera %s liefert seit %.0fs ein unveraendertes Bild, versuche Neuverbindung",
+                self.camera_id, _STUCK_FRAME_SECONDS,
+            )
+            self._last_reopen_time = now
+            self._frame_unchanged_since = now
+            try:
+                self._reopen()
+            except CameraError:
+                return frame
+            ret, fresh = self.cap.read()
+            if not _read_failed(ret, fresh):
+                self._last_frame = fresh
+                self._frame_unchanged_since = time.monotonic()
+                return fresh
+        return frame
+
     def _read_frame(self):
         """Read a frame, retrying transient read failures and auto-reopening
         the capture device if they persist. Raises CameraError if no frame
         could be obtained at all. Does not reject frames based on content -
         a dark/placeholder frame (e.g. Canon EOS Webcam Utility's "connect
         your camera" graphic before it detects the physical camera) is a
-        valid frame, not a failure."""
+        valid frame, not a failure - only a frame that never changes for a
+        long time (see _check_frozen) is treated as stuck."""
         self._ensure_open()
         ret, frame = self.cap.read()
         if _read_failed(ret, frame):
@@ -193,7 +245,7 @@ class OpenCVCamera(BaseCamera):
 
         if not _read_failed(ret, frame):
             self._consecutive_bad_frames = 0
-            return frame
+            return self._check_frozen(frame)
 
         self._consecutive_bad_frames += 1
         if self._consecutive_bad_frames == 1:
