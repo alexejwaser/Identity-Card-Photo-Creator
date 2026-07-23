@@ -2,6 +2,7 @@
 import sys
 import time
 import logging
+import threading
 from pathlib import Path
 import cv2
 from PySide6 import QtGui
@@ -82,6 +83,13 @@ class OpenCVCamera(BaseCamera):
         self.backend_used = None
         self._consecutive_bad_frames = 0
         self._last_reopen_time = 0.0
+        # Guards every access to self.cap: the live preview (background task)
+        # and an actual photo capture (also a background task) can otherwise
+        # land on cap.read()/cap.release() at the same time, which is not
+        # safe with a single cv2.VideoCapture handle. Reentrant because
+        # _reopen() calls stop_liveview()/start_liveview() while already
+        # holding the lock from _read_frame().
+        self._io_lock = threading.RLock()
 
     def _rotate(self, frame):
         """Rotate *frame* by the configured amount; no-op if rotation is 0."""
@@ -91,32 +99,41 @@ class OpenCVCamera(BaseCamera):
         return frame
 
     def start_liveview(self):
-        if self.cap is not None:
-            return
-        last_error = None
-        for backend in _LIVEVIEW_BACKENDS:
-            cap = cv2.VideoCapture(self.camera_id, backend)
-            if cap.isOpened():
-                # Reduces internal frame buffering (where supported), which
-                # otherwise shows up as visible lag between the live scene
-                # and what the preview displays.
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                self.cap = cap
-                self.backend_used = backend
-                self._consecutive_bad_frames = 0
-                logger.info(
-                    "Kamera %s geoeffnet (Backend %s)", self.camera_id, backend
-                )
+        with self._io_lock:
+            if self.cap is not None:
                 return
-            cap.release()
-            last_error = backend
-        raise CameraError(f"Kamera {self.camera_id} kann nicht geoeffnet werden")
+            # Once we know which backend actually works for this device, try
+            # it first on subsequent (re)opens. Some backends (e.g. MSMF on
+            # certain virtual webcam drivers) can take a noticeable moment to
+            # fail before falling back, and that cost is pure waste on every
+            # reconnect once we already know DSHOW (or whichever) is the one
+            # that works.
+            backends = _LIVEVIEW_BACKENDS
+            if self.backend_used is not None and self.backend_used in backends:
+                backends = [self.backend_used] + [b for b in backends if b != self.backend_used]
+            for backend in backends:
+                cap = cv2.VideoCapture(self.camera_id, backend)
+                if cap.isOpened():
+                    # Reduces internal frame buffering (where supported), which
+                    # otherwise shows up as visible lag between the live scene
+                    # and what the preview displays.
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    self.cap = cap
+                    self.backend_used = backend
+                    self._consecutive_bad_frames = 0
+                    logger.info(
+                        "Kamera %s geoeffnet (Backend %s)", self.camera_id, backend
+                    )
+                    return
+                cap.release()
+            self.backend_used = None
+            raise CameraError(f"Kamera {self.camera_id} kann nicht geoeffnet werden")
 
     def stop_liveview(self):
-        if self.cap is not None:
-            self.cap.release()
-            self.cap = None
-            self.backend_used = None
+        with self._io_lock:
+            if self.cap is not None:
+                self.cap.release()
+                self.cap = None
 
     def _ensure_open(self):
         if self.cap is None:
@@ -174,19 +191,21 @@ class OpenCVCamera(BaseCamera):
         raise CameraError("Kein Bild von Kamera erhalten")
 
     def capture(self, dest: Path) -> None:
-        frame = self._read_frame()
-        frame = self._rotate(frame)
-        cv2.imwrite(str(dest), frame)
+        with self._io_lock:
+            frame = self._read_frame()
+            frame = self._rotate(frame)
+            cv2.imwrite(str(dest), frame)
 
     def capture_preview(self, dest: Path) -> None:
         self.capture(dest)
 
     def get_preview_qimage(self) -> QtGui.QImage:
-        frame = self._read_frame()
-        frame = _downscale_for_preview(frame)
-        frame = self._rotate(frame)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb.shape
-        bytes_per_line = ch * w
-        img = QtGui.QImage(rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
-        return img.copy()
+        with self._io_lock:
+            frame = self._read_frame()
+            frame = _downscale_for_preview(frame)
+            frame = self._rotate(frame)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb.shape
+            bytes_per_line = ch * w
+            img = QtGui.QImage(rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+            return img.copy()

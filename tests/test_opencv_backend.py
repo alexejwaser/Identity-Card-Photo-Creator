@@ -124,6 +124,34 @@ def test_persistent_black_frames_trigger_reopen(monkeypatch):
     assert cam._consecutive_bad_frames == 0
 
 
+def test_reopen_reuses_last_working_backend(monkeypatch):
+    """Once a backend has worked, reopening (after a bad-frame streak)
+    should try it first rather than re-probing ones already known to fail
+    on this device (e.g. MSMF on some virtual webcam drivers)."""
+    _patch_backends(monkeypatch, ["MSMF", "DSHOW"])
+    monkeypatch.setattr(backend_mod, "_MAX_CONSECUTIVE_BAD_FRAMES", 1)
+    attempts = []
+
+    def factory(index, backend):
+        attempts.append(backend)
+        opens = backend == "DSHOW"
+        reads = [(True, _black_frame())] if opens else [(True, _white_frame())]
+        return FakeCapture(index, backend, opens=opens, reads=reads)
+
+    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", factory)
+
+    cam = OpenCVCamera(0)
+    cam.start_liveview()
+    assert attempts == ["MSMF", "DSHOW"]
+
+    with pytest.raises(CameraError):
+        cam.get_preview_qimage()
+
+    # The reopen triggered by the bad-frame streak should have tried DSHOW
+    # (the previously-working backend) first, without probing MSMF again.
+    assert attempts == ["MSMF", "DSHOW", "DSHOW"]
+
+
 def test_transient_blank_recovers_without_reopen(monkeypatch):
     _patch_backends(monkeypatch, ["ANY"])
     cap = FakeCapture(0, "ANY", reads=[(True, _black_frame()), (True, _white_frame())])
