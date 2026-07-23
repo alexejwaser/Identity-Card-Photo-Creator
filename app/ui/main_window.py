@@ -10,6 +10,7 @@ import psutil
 
 from ..core.config.settings import Settings, CONFIG_DIR
 from ..core.controller import MainController
+from ..version import get_version
 from ..core.excel.reader import ExcelReader, Learner
 from ..core.excel.missed_writer import MissedWriter, MissedEntry
 from ..core.imaging.processor import process_image
@@ -54,8 +55,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.controller.reader = value
 
     def _setup_ui(self):
-        self.setWindowTitle('LegicCard-Creator')
+        self._version = get_version()
+        self.setWindowTitle(f'LegicCard-Creator v{self._version}')
         self.setMinimumSize(900, 620)
+        # Version in the bottom-left status bar, so the running build is always
+        # identifiable at a glance (matches the version tagged on GitHub).
+        version_label = QtWidgets.QLabel(f'v{self._version}')
+        version_label.setStyleSheet('color: gray; font-size:11px;')
+        self.statusBar().addWidget(version_label)
+        self.statusBar().setSizeGripEnabled(False)
         central = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(central)
         layout.setContentsMargins(20, 20, 20, 20)

@@ -28,6 +28,17 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Write build info
+        # Stamps the artifact with the git short SHA + run number so every
+        # build is uniquely identifiable in the app (bottom-left) and title.
+        run: |
+          $sha = "${{ github.sha }}".Substring(0,7)
+          $run = "${{ github.run_number }}"
+          $lines = @("BUILD_SHA = ""$sha""", "BUILD_NUMBER = ""$run""")
+          Set-Content -Path app\_build_info.py -Encoding utf8 -Value $lines
+          $ver = (python -c "from app.version import __version__; print(__version__)").Trim()
+          Add-Content -Path $env:GITHUB_ENV -Value "BUILD_TAG=$ver-b$run-$sha"
+
       - name: Build application directory
         # --onedir is faster to start than --onefile because Python does not
         # need to extract itself to %TEMP% on every launch.
@@ -38,14 +49,15 @@ jobs:
             --hidden-import cv2_enumerate_cameras `
             --collect-submodules cv2_enumerate_cameras `
             --hidden-import pygrabber `
+            --hidden-import app._build_info `
             app\main.py
 
       - name: Package as ZIP
         run: |
-          Compress-Archive -Path dist\LegicCardCreator -DestinationPath dist\LegicCardCreator.zip
+          Compress-Archive -Path dist\LegicCardCreator -DestinationPath "dist\LegicCardCreator-$env:BUILD_TAG.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LegicCardCreator-windows
-          path: dist/LegicCardCreator.zip
+          name: LegicCardCreator-windows-${{ env.BUILD_TAG }}
+          path: dist/LegicCardCreator-${{ env.BUILD_TAG }}.zip

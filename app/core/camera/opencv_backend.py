@@ -166,6 +166,15 @@ class OpenCVCamera(BaseCamera):
                         _backend_label(backend),
                     )
                     return
+                # Log which backend/index could not open, so a session log shows
+                # whether the preferred backend (MSMF, the Teams path) engaged or
+                # silently fell through to DirectShow.
+                logger.info(
+                    "Kamera '%s': Backend %s konnte Index %s nicht oeffnen",
+                    self.device_name or self.camera_id,
+                    _backend_label(backend),
+                    index,
+                )
                 cap.release()
             self.backend_used = None
             raise CameraError(f"Kamera {self.camera_id} kann nicht geoeffnet werden")
