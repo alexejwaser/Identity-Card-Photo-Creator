@@ -1,4 +1,11 @@
-"""Tests for OpenCVCamera backend fallback and read-failure auto-recovery."""
+"""Tests for OpenCVCamera: backend fallback and basic frame reads.
+
+The camera just streams whatever frame the device provides - it does not
+inspect frame content or attempt automatic recovery based on it. Drivers
+like Canon EOS Webcam Utility are responsible for their own hand-off from
+a placeholder graphic to live video; this class only cares whether a read
+succeeded or failed.
+"""
 
 import threading
 
@@ -10,12 +17,8 @@ from app.core.camera.base import CameraError
 from app.core.camera.opencv_backend import OpenCVCamera
 
 
-def _black_frame():
+def _frame():
     return np.zeros((4, 4, 3), dtype=np.uint8)
-
-
-def _white_frame():
-    return np.full((4, 4, 3), 255, dtype=np.uint8)
 
 
 class FakeCapture:
@@ -25,7 +28,7 @@ class FakeCapture:
         self.index = index
         self.backend = backend
         self._opens = opens
-        self._reads = list(reads) if reads is not None else [(True, _white_frame())]
+        self._reads = list(reads) if reads is not None else [(True, _frame())]
         self.released = False
 
     def isOpened(self):
@@ -86,131 +89,17 @@ def test_start_liveview_raises_when_all_backends_fail(monkeypatch):
         cam.start_liveview()
 
 
-def test_good_frames_do_not_trigger_recovery(monkeypatch):
-    _patch_backends(monkeypatch, ["ANY"])
-    cap = FakeCapture(0, "ANY", reads=[(True, _white_frame())])
-    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", lambda index, backend: cap)
-
-    cam = OpenCVCamera(0)
-    for _ in range(10):
-        cam.get_preview_qimage()
-
-    assert cam._consecutive_bad_frames == 0
-    assert not cap.released
-
-
-def test_dark_frames_are_not_treated_as_errors(monkeypatch):
-    """A dark/placeholder frame (e.g. Canon EOS Webcam Utility's "connect
-    your camera" graphic before it detects the physical camera) is a valid
-    frame, not a failure - it must be displayed like any other frame and
-    must never trigger a reopen. Reopening doesn't speed up the driver's
-    own detection and can reset/prolong it."""
-    _patch_backends(monkeypatch, ["ANY"])
-    cap = FakeCapture(0, "ANY", reads=[(True, _black_frame())])
-    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", lambda index, backend: cap)
-
-    cam = OpenCVCamera(0)
-    for _ in range(10):
-        img = cam.get_preview_qimage()
-        assert not img.isNull()
-
-    assert cam._consecutive_bad_frames == 0
-    assert not cap.released
-
-
-def test_frozen_identical_frame_triggers_single_reopen(monkeypatch):
-    """A byte-for-byte unchanging feed (e.g. Canon EOS Webcam Utility's
-    placeholder graphic stuck forever because it never picked up the
-    physical camera) should eventually trigger a reopen - distinct from,
-    and independent of, dark frames being otherwise treated as fine."""
-    _patch_backends(monkeypatch, ["ANY"])
-    monkeypatch.setattr(backend_mod, "_STUCK_FRAME_SECONDS", 0.0)
-    monkeypatch.setattr(backend_mod, "_REOPEN_COOLDOWN_SECONDS", 0.0)
-    caps = []
-
-    def factory(index, backend):
-        cap = FakeCapture(index, backend, reads=[(True, _black_frame())])
-        caps.append(cap)
-        return cap
-
-    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", factory)
-
-    cam = OpenCVCamera(0)
-    cam.start_liveview()
-    first_cap = caps[0]
-
-    cam.get_preview_qimage()  # establishes the baseline frame
-    cam.get_preview_qimage()  # identical frame again -> treated as frozen
-
-    assert first_cap.released
-    assert len(caps) == 2
-
-
-def test_frozen_frame_does_not_raise_if_reopen_fails(monkeypatch):
-    """Even if the reopen attempt itself fails, the operator should still
-    get the last available frame back rather than an error - we already
-    know something is wrong; flapping to an error message on top doesn't
-    help and losing the last valid frame doesn't either."""
-    _patch_backends(monkeypatch, ["ANY"])
-    monkeypatch.setattr(backend_mod, "_STUCK_FRAME_SECONDS", 0.0)
-    monkeypatch.setattr(backend_mod, "_REOPEN_COOLDOWN_SECONDS", 0.0)
-    calls = {"n": 0}
-
-    def factory(index, backend):
-        calls["n"] += 1
-        # First open succeeds; the reopen attempt fails to reopen at all.
-        return FakeCapture(index, backend, opens=(calls["n"] == 1), reads=[(True, _black_frame())])
-
-    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", factory)
-
-    cam = OpenCVCamera(0)
-    cam.start_liveview()
-
-    cam.get_preview_qimage()
-    img = cam.get_preview_qimage()
-    assert not img.isNull()
-
-
-def test_persistent_read_failures_trigger_reopen(monkeypatch):
-    _patch_backends(monkeypatch, ["ANY"])
-    caps = []
-
-    def factory(index, backend):
-        cap = FakeCapture(index, backend, reads=[(False, None)])
-        caps.append(cap)
-        return cap
-
-    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", factory)
-    monkeypatch.setattr(backend_mod, "_MAX_CONSECUTIVE_BAD_FRAMES", 3)
-
-    cam = OpenCVCamera(0)
-    cam.start_liveview()
-    first_cap = caps[0]
-
-    for _ in range(3):
-        with pytest.raises(CameraError):
-            cam.get_preview_qimage()
-
-    # First capture should have been released and a new one opened once the
-    # failure streak crossed the threshold.
-    assert first_cap.released
-    assert len(caps) == 2
-    assert cam._consecutive_bad_frames == 0
-
-
 def test_reopen_reuses_last_working_backend(monkeypatch):
-    """Once a backend has worked, reopening (after a failure streak) should
-    try it first rather than re-probing ones already known to fail on this
-    device (e.g. MSMF on some virtual webcam drivers)."""
+    """Once a backend has worked, a later reopen (e.g. via the manual
+    reconnect action) should try it first rather than re-probing ones
+    already known to fail on this device (e.g. MSMF on some virtual
+    webcam drivers)."""
     _patch_backends(monkeypatch, ["MSMF", "DSHOW"])
-    monkeypatch.setattr(backend_mod, "_MAX_CONSECUTIVE_BAD_FRAMES", 1)
     attempts = []
 
     def factory(index, backend):
         attempts.append(backend)
-        opens = backend == "DSHOW"
-        reads = [(False, None)] if opens else [(True, _white_frame())]
-        return FakeCapture(index, backend, opens=opens, reads=reads)
+        return FakeCapture(index, backend, opens=(backend == "DSHOW"))
 
     monkeypatch.setattr(backend_mod.cv2, "VideoCapture", factory)
 
@@ -218,23 +107,40 @@ def test_reopen_reuses_last_working_backend(monkeypatch):
     cam.start_liveview()
     assert attempts == ["MSMF", "DSHOW"]
 
-    with pytest.raises(CameraError):
-        cam.get_preview_qimage()
+    cam.stop_liveview()
+    cam.start_liveview()
 
-    # The reopen triggered by the failure streak should have tried DSHOW
-    # (the previously-working backend) first, without probing MSMF again.
     assert attempts == ["MSMF", "DSHOW", "DSHOW"]
 
 
-def test_transient_read_failure_recovers_without_reopen(monkeypatch):
+def test_get_preview_qimage_returns_whatever_frame_is_read(monkeypatch):
+    """A dark/placeholder frame (e.g. Canon EOS Webcam Utility's "connect
+    your camera" graphic before it detects the physical camera) is just
+    displayed like any other frame - the driver owns the hand-off to live
+    video, not this class."""
     _patch_backends(monkeypatch, ["ANY"])
-    cap = FakeCapture(0, "ANY", reads=[(False, None), (True, _white_frame())])
+    cap = FakeCapture(0, "ANY", reads=[(True, _frame())])
     monkeypatch.setattr(backend_mod.cv2, "VideoCapture", lambda index, backend: cap)
 
     cam = OpenCVCamera(0)
-    cam.get_preview_qimage()
+    for _ in range(10):
+        img = cam.get_preview_qimage()
+        assert not img.isNull()
 
-    assert cam._consecutive_bad_frames == 0
+    assert not cap.released
+
+
+def test_read_failure_raises_but_does_not_reopen(monkeypatch):
+    """A failed read surfaces as an error for that tick only; the same
+    connection is tried again next time, with no automatic teardown."""
+    _patch_backends(monkeypatch, ["ANY"])
+    cap = FakeCapture(0, "ANY", reads=[(False, None)])
+    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", lambda index, backend: cap)
+
+    cam = OpenCVCamera(0)
+    with pytest.raises(CameraError):
+        cam.get_preview_qimage()
+
     assert not cap.released
 
 
@@ -245,7 +151,7 @@ def test_lock_timeout_raises_instead_of_blocking_forever(monkeypatch):
     whole app has to be force-restarted."""
     _patch_backends(monkeypatch, ["ANY"])
     monkeypatch.setattr(backend_mod, "_IO_LOCK_TIMEOUT_SECONDS", 0.2)
-    cap = FakeCapture(0, "ANY", reads=[(True, _white_frame())])
+    cap = FakeCapture(0, "ANY", reads=[(True, _frame())])
     monkeypatch.setattr(backend_mod.cv2, "VideoCapture", lambda index, backend: cap)
 
     cam = OpenCVCamera(0)

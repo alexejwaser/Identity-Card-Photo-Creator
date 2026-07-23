@@ -1,12 +1,10 @@
 # app/core/camera/opencv_backend.py
 import sys
-import time
 import logging
 import threading
 from contextlib import contextmanager
 from pathlib import Path
 import cv2
-import numpy as np
 from PySide6 import QtGui
 from .base import BaseCamera, CameraError
 
@@ -27,24 +25,6 @@ if sys.platform == "win32":
 else:
     _LIVEVIEW_BACKENDS = [cv2.CAP_ANY]
 
-# Number of consecutive failed reads tolerated before the capture device is
-# fully reopened (mirrors what a PC restart does, but scoped to just this
-# VideoCapture instance).
-_MAX_CONSECUTIVE_BAD_FRAMES = 5
-# Minimum time between reopen attempts, so a genuinely broken connection
-# doesn't get its capture graph torn down and rebuilt dozens of times a
-# second for no benefit.
-_REOPEN_COOLDOWN_SECONDS = 5.0
-# How long a byte-for-byte identical frame has to persist before it's
-# treated as frozen rather than a live (if momentarily still) scene. Real
-# camera sensors virtually always show frame-to-frame noise even pointed at
-# a static subject, so an exact match held this long is a strong signal the
-# feed is a static graphic - e.g. Canon EOS Webcam Utility's own "connect
-# your camera" placeholder never clearing because it isn't detecting the
-# physical camera - rather than genuine (if unchanging) video. Long enough
-# to never mistake the normal few-second placeholder-to-live-video handoff
-# for a stuck feed.
-_STUCK_FRAME_SECONDS = 20.0
 # Cap on how long any caller (GUI thread or background task) waits for the
 # camera lock. A live-preview read can legitimately take a few seconds when
 # the driver is having a bad moment, but if cv2 ever truly wedges inside a
@@ -70,23 +50,6 @@ _CV2_ROTATION = {
 }
 
 
-def _read_failed(ret: bool, frame) -> bool:
-    """True only if the read itself failed (no frame at all).
-
-    Deliberately does NOT judge frame *content* (e.g. rejecting dark
-    frames as "blank"): some virtual webcam drivers - notably Canon EOS
-    Webcam Utility - legitimately show their own placeholder graphic
-    ("connect your camera") for the first few seconds after the app opens
-    the device, before the physical camera is detected and live video
-    takes over. That placeholder is a perfectly valid frame, just like any
-    other webcam's first frame; treating it as an error and tearing down
-    the capture device to "recover" doesn't speed up the driver's own
-    detection and can reset/prolong it. Just show whatever frame arrives,
-    like any other webcam - only a hard read failure is worth reopening.
-    """
-    return not ret or frame is None
-
-
 def _downscale_for_preview(frame):
     h, w = frame.shape[:2]
     longest = max(h, w)
@@ -97,21 +60,24 @@ def _downscale_for_preview(frame):
 
 
 class OpenCVCamera(BaseCamera):
+    """Reads frames from an OpenCV/DirectShow camera index, including
+    virtual webcam drivers such as Canon EOS Webcam Utility. Once opened,
+    this just streams whatever frame the device currently provides - e.g.
+    EOS Webcam Utility's own "connect your camera" placeholder while it
+    detects the physical camera, then its live feed once it does - the
+    same way any other webcam viewer would. The driver is responsible for
+    that hand-off; this class does not inspect frame content or guess
+    about it."""
+
     def __init__(self, camera_id: int = 0, rotation: int = 0):
         self.camera_id = camera_id
         self.cap = None
         self.rotation = rotation  # degrees clockwise (0, 90, 180, 270)
         self.backend_used = None
-        self._consecutive_bad_frames = 0
-        self._last_reopen_time = 0.0
-        self._last_frame = None
-        self._frame_unchanged_since = None
         # Guards every access to self.cap: the live preview (background task)
         # and an actual photo capture (also a background task) can otherwise
         # land on cap.read()/cap.release() at the same time, which is not
-        # safe with a single cv2.VideoCapture handle. Reentrant because
-        # _reopen() calls stop_liveview()/start_liveview() while already
-        # holding the lock from _read_frame().
+        # safe with a single cv2.VideoCapture handle.
         self._io_lock = threading.RLock()
 
     @contextmanager
@@ -152,9 +118,6 @@ class OpenCVCamera(BaseCamera):
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     self.cap = cap
                     self.backend_used = backend
-                    self._consecutive_bad_frames = 0
-                    self._last_frame = None
-                    self._frame_unchanged_since = None
                     logger.info(
                         "Kamera %s geoeffnet (Backend %s)", self.camera_id, backend
                     )
@@ -173,96 +136,17 @@ class OpenCVCamera(BaseCamera):
         if self.cap is None:
             self.start_liveview()
 
-    def _reopen(self):
-        logger.warning(
-            "Kamera %s liefert wiederholt keine Bilder, versuche Neuverbindung",
-            self.camera_id,
-        )
-        self.stop_liveview()
-        try:
-            self.start_liveview()
-        except CameraError:
-            logger.warning("Neuverbindung zu Kamera %s fehlgeschlagen", self.camera_id)
-            raise
-        else:
-            logger.info("Neuverbindung zu Kamera %s erfolgreich", self.camera_id)
-        self._consecutive_bad_frames = 0
-
-    def _check_frozen(self, frame):
-        """Detect a byte-for-byte static feed (see _STUCK_FRAME_SECONDS) and
-        attempt a single reopen. A fresh connection can pick up live video
-        that never appeared on the existing one - e.g. Canon EOS Webcam
-        Utility's own hand-off from its placeholder graphic to the physical
-        camera can leave an already-open capture graph stuck on the
-        placeholder's format. Never raises: if the reopen doesn't help, the
-        operator still sees whatever frame is available rather than an
-        outright error."""
-        now = time.monotonic()
-        if self._last_frame is None or not np.array_equal(frame, self._last_frame):
-            self._last_frame = frame
-            self._frame_unchanged_since = now
-            return frame
-
-        if (
-            now - self._frame_unchanged_since >= _STUCK_FRAME_SECONDS
-            and now - self._last_reopen_time >= _REOPEN_COOLDOWN_SECONDS
-        ):
-            logger.warning(
-                "Kamera %s liefert seit %.0fs ein unveraendertes Bild, versuche Neuverbindung",
-                self.camera_id, _STUCK_FRAME_SECONDS,
-            )
-            self._last_reopen_time = now
-            self._frame_unchanged_since = now
-            try:
-                self._reopen()
-            except CameraError:
-                return frame
-            ret, fresh = self.cap.read()
-            if not _read_failed(ret, fresh):
-                self._last_frame = fresh
-                self._frame_unchanged_since = time.monotonic()
-                return fresh
-        return frame
-
     def _read_frame(self):
-        """Read a frame, retrying transient read failures and auto-reopening
-        the capture device if they persist. Raises CameraError if no frame
-        could be obtained at all. Does not reject frames based on content -
-        a dark/placeholder frame (e.g. Canon EOS Webcam Utility's "connect
-        your camera" graphic before it detects the physical camera) is a
-        valid frame, not a failure - only a frame that never changes for a
-        long time (see _check_frozen) is treated as stuck."""
+        """Read a single frame. Raises CameraError only if the read itself
+        fails - the next tick simply tries again on the same connection,
+        exactly like any other webcam viewer. Frame content (e.g. a driver's
+        own placeholder graphic while it detects the physical camera) is
+        never inspected or second-guessed."""
         self._ensure_open()
         ret, frame = self.cap.read()
-        if _read_failed(ret, frame):
-            # Transient failures (e.g. right after opening) often clear up
-            # on an immediate retry, so try a couple more times before
-            # counting this as part of a persistent streak.
-            for _ in range(2):
-                ret, frame = self.cap.read()
-                if not _read_failed(ret, frame):
-                    break
-
-        if not _read_failed(ret, frame):
-            self._consecutive_bad_frames = 0
-            return self._check_frozen(frame)
-
-        self._consecutive_bad_frames += 1
-        if self._consecutive_bad_frames == 1:
-            logger.warning("Kein Bild von Kamera %s erhalten", self.camera_id)
-        now = time.monotonic()
-        if (
-            self._consecutive_bad_frames >= _MAX_CONSECUTIVE_BAD_FRAMES
-            and now - self._last_reopen_time >= _REOPEN_COOLDOWN_SECONDS
-        ):
-            self._last_reopen_time = now
-            self._reopen()
-            ret, frame = self.cap.read()
-            if not _read_failed(ret, frame):
-                self._consecutive_bad_frames = 0
-                return frame
-
-        raise CameraError("Kein Bild von Kamera erhalten")
+        if not ret or frame is None:
+            raise CameraError("Kein Bild von Kamera erhalten")
+        return frame
 
     def capture(self, dest: Path) -> None:
         with self._locked():

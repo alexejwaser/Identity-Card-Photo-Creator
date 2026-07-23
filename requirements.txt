@@ -2,7 +2,6 @@ PySide6
 openpyxl
 Pillow
 opencv-python-headless
-numpy
 pytest
 pytest-qt
 psutil
