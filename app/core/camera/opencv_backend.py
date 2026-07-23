@@ -3,6 +3,7 @@ import sys
 import time
 import logging
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 import cv2
 from PySide6 import QtGui
@@ -37,6 +38,14 @@ _MAX_CONSECUTIVE_BAD_FRAMES = 5
 _REOPEN_COOLDOWN_SECONDS = 5.0
 # A frame whose mean pixel value falls below this is treated as black.
 _BLANK_FRAME_MEAN_THRESHOLD = 2.0
+# Cap on how long any caller (GUI thread or background task) waits for the
+# camera lock. A live-preview read can legitimately take a few seconds when
+# the driver is having a bad moment, but if cv2 ever truly wedges inside a
+# blocking call, waiting forever for the lock would freeze whichever thread
+# asked for it - including the GUI thread when the operator opens Settings
+# or hits reconnect - and the whole app would appear hung and need a forced
+# restart. A bounded wait turns that into a clear, recoverable error instead.
+_IO_LOCK_TIMEOUT_SECONDS = 10.0
 # Live preview frames are only ever displayed scaled down into a small
 # widget, so downscale before the (comparatively expensive) rotate/color
 # conversion/QImage copy steps rather than doing that work at full sensor
@@ -91,6 +100,15 @@ class OpenCVCamera(BaseCamera):
         # holding the lock from _read_frame().
         self._io_lock = threading.RLock()
 
+    @contextmanager
+    def _locked(self):
+        if not self._io_lock.acquire(timeout=_IO_LOCK_TIMEOUT_SECONDS):
+            raise CameraError("Kamera ist gerade beschaeftigt, bitte kurz warten")
+        try:
+            yield
+        finally:
+            self._io_lock.release()
+
     def _rotate(self, frame):
         """Rotate *frame* by the configured amount; no-op if rotation is 0."""
         code = _CV2_ROTATION.get(self.rotation)
@@ -99,7 +117,7 @@ class OpenCVCamera(BaseCamera):
         return frame
 
     def start_liveview(self):
-        with self._io_lock:
+        with self._locked():
             if self.cap is not None:
                 return
             # Once we know which backend actually works for this device, try
@@ -130,7 +148,7 @@ class OpenCVCamera(BaseCamera):
             raise CameraError(f"Kamera {self.camera_id} kann nicht geoeffnet werden")
 
     def stop_liveview(self):
-        with self._io_lock:
+        with self._locked():
             if self.cap is not None:
                 self.cap.release()
                 self.cap = None
@@ -191,7 +209,7 @@ class OpenCVCamera(BaseCamera):
         raise CameraError("Kein Bild von Kamera erhalten")
 
     def capture(self, dest: Path) -> None:
-        with self._io_lock:
+        with self._locked():
             frame = self._read_frame()
             frame = self._rotate(frame)
             cv2.imwrite(str(dest), frame)
@@ -200,7 +218,7 @@ class OpenCVCamera(BaseCamera):
         self.capture(dest)
 
     def get_preview_qimage(self) -> QtGui.QImage:
-        with self._io_lock:
+        with self._locked():
             frame = self._read_frame()
             frame = _downscale_for_preview(frame)
             frame = self._rotate(frame)

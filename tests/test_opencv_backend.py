@@ -1,5 +1,7 @@
 """Tests for OpenCVCamera backend fallback and black-frame auto-recovery."""
 
+import threading
+
 import numpy as np
 import pytest
 
@@ -162,3 +164,39 @@ def test_transient_blank_recovers_without_reopen(monkeypatch):
 
     assert cam._consecutive_bad_frames == 0
     assert not cap.released
+
+
+def test_lock_timeout_raises_instead_of_blocking_forever(monkeypatch):
+    """If a read is (or looks) stuck holding the camera lock forever, any
+    other caller - notably the GUI thread doing a settings-driven reconnect -
+    must get a bounded wait and a clear error instead of hanging until the
+    whole app has to be force-restarted."""
+    _patch_backends(monkeypatch, ["ANY"])
+    monkeypatch.setattr(backend_mod, "_IO_LOCK_TIMEOUT_SECONDS", 0.2)
+    cap = FakeCapture(0, "ANY", reads=[(True, _white_frame())])
+    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", lambda index, backend: cap)
+
+    cam = OpenCVCamera(0)
+    cam.start_liveview()
+
+    # Simulate another thread wedged inside a camera call, holding the lock.
+    cam._io_lock.acquire()
+    try:
+        start = threading.Event()
+        error = {}
+
+        def blocked_call():
+            start.set()
+            try:
+                cam.stop_liveview()
+            except CameraError as e:
+                error["e"] = e
+
+        t = threading.Thread(target=blocked_call)
+        t.start()
+        start.wait()
+        t.join(timeout=2)
+        assert not t.is_alive()
+        assert "e" in error
+    finally:
+        cam._io_lock.release()

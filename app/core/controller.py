@@ -45,13 +45,22 @@ class MainController:
                 cam.start_liveview()
             except Exception as e:
                 cam = None
-                # The configured index may not exist on this machine (e.g. a
+                # Only auto-switch to a different camera if the configured
+                # index genuinely doesn't exist on this machine (e.g. a
                 # laptop's built-in webcam sits at index 0, but the stored
                 # setting still points at index 1 from a previous device/OS).
-                # Try whatever camera actually is available before giving up
-                # to the placeholder-photo simulator.
-                fallback = next(
-                    (d for d in self._safe_list_cameras() if d.index != device_index), None
+                # A flaky driver (observed with Canon EOS Webcam Utility,
+                # which can intermittently fail to open for a stretch before
+                # recovering on its own) is a different situation: silently
+                # switching to - and persisting - some other camera on every
+                # transient hiccup would fight the operator's actual choice
+                # and adds a slow device re-enumeration on top of an already
+                # slow startup, so leave the configured index alone and fall
+                # back to the simulator for this attempt instead.
+                detected = self._safe_list_cameras()
+                configured_exists = any(d.index == device_index for d in detected)
+                fallback = (
+                    None if configured_exists else next(iter(detected), None)
                 )
                 if fallback is not None:
                     try:
