@@ -17,11 +17,14 @@ from ..core.imaging.processor import process_image
 from .settings_dialog import SettingsDialog
 from .class_search_dialog import ClassSearchDialog
 from .onboarding_dialog import OnboardingDialog
+from .icons import github_icon
 from .widgets import ControlPanel
 
 
 class MainWindow(QtWidgets.QMainWindow):
     """Main GUI window for the application."""
+
+    _GITHUB_URL = 'https://github.com/alexejwaser/Identity-Card-Photo-Creator'
 
     def __init__(
         self,
@@ -63,6 +66,20 @@ class MainWindow(QtWidgets.QMainWindow):
         version_label = QtWidgets.QLabel(f'v{self._version}')
         version_label.setStyleSheet('color: gray; font-size:11px;')
         self.statusBar().addWidget(version_label)
+        # Author credit + a clickable GitHub mark that opens the project repo.
+        author_label = QtWidgets.QLabel('erstellt von Alexej Waser')
+        author_label.setStyleSheet('color: gray; font-size:11px;')
+        self.statusBar().addWidget(author_label)
+        self.btn_github = QtWidgets.QToolButton()
+        self.btn_github.setIcon(github_icon())
+        self.btn_github.setIconSize(QtCore.QSize(14, 14))
+        self.btn_github.setAutoRaise(True)  # flat, blends into the status bar
+        self.btn_github.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_github.setToolTip('GitHub-Repository öffnen')
+        self.btn_github.clicked.connect(
+            lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(self._GITHUB_URL))
+        )
+        self.statusBar().addWidget(self.btn_github)
         self.statusBar().setSizeGripEnabled(False)
         central = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(central)
@@ -216,6 +233,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def load_excel(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Excel auswählen', filter='Excel (*.xlsx)')
         if not path:
+            return
+        # Confirm before opening, so an accidental pick in the file dialog does
+        # not silently swap the active roster.
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            'Datei öffnen',
+            f'Bist du sicher dass du diese Datei öffnen willst:\n{Path(path).name}',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
             return
         self._load_excel_from_path(Path(path))
 
@@ -685,14 +713,24 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(lbl)
         h = QtWidgets.QHBoxLayout()
         retry = QtWidgets.QPushButton('Erneut fotografieren  [Esc]')
-        ok_btn = QtWidgets.QPushButton('OK  [Leertaste]')
+        ok_btn = QtWidgets.QPushButton('OK  [Leertaste / Enter]')
+        # Enter previously discarded the photo because the "Erneut fotografieren"
+        # button held focus and got triggered. Disable autoDefault on both so no
+        # button auto-fires on Enter; the explicit shortcuts below decide, making
+        # Enter keep the photo just like the spacebar.
+        for b in (retry, ok_btn):
+            b.setAutoDefault(False)
+            b.setDefault(False)
+        retry.setToolTip('Foto verwerfen und neu aufnehmen (Esc)')
+        ok_btn.setToolTip('Foto behalten (Leertaste oder Enter)')
         h.addWidget(retry)
         h.addWidget(ok_btn)
         vbox.addLayout(h)
         result = {'ok': True}
         retry.clicked.connect(lambda: (result.update(ok=False), dlg.accept()))
         ok_btn.clicked.connect(dlg.accept)
-        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Space), dlg, ok_btn.click)
+        for key in (QtCore.Qt.Key_Space, QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            QtGui.QShortcut(QtGui.QKeySequence(key), dlg, ok_btn.click)
         QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Escape), dlg, retry.click)
         dlg.exec()
         return result['ok']
