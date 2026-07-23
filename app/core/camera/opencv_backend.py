@@ -1,12 +1,34 @@
 # app/core/camera/opencv_backend.py
 import sys
+import logging
 from pathlib import Path
 import cv2
 from PySide6 import QtGui
 from .base import BaseCamera, CameraError
 
+logger = logging.getLogger(__name__)
+
 # DirectShow is Windows-only; other platforms fall back to OpenCV's auto-detection.
+# Kept as the enumeration backend (enumerate.py pairs it with pygrabber's
+# DirectShow-ordered device names) even though live capture now prefers MSMF.
 _CAPTURE_BACKEND = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+
+# Backends attempted (in order) when opening a camera for live capture. Media
+# Foundation (MSMF) is what most modern Windows apps (Teams, Camera app) use
+# and negotiates pixel formats more reliably with some UVC/virtual webcams
+# (e.g. Canon EOS Webcam Utility) than DirectShow does. DirectShow is kept as
+# a fallback for devices/drivers that only work through it.
+if sys.platform == "win32":
+    _LIVEVIEW_BACKENDS = [cv2.CAP_MSMF, cv2.CAP_DSHOW]
+else:
+    _LIVEVIEW_BACKENDS = [cv2.CAP_ANY]
+
+# Number of consecutive blank/failed frames tolerated before the capture
+# device is fully reopened (mirrors what a PC restart does, but scoped to
+# just this VideoCapture instance).
+_MAX_CONSECUTIVE_BAD_FRAMES = 5
+# A frame whose mean pixel value falls below this is treated as black.
+_BLANK_FRAME_MEAN_THRESHOLD = 2.0
 
 # Map clockwise-rotation degrees to the corresponding cv2 constant.
 # 270° CW = 90° CCW, which is the correct setting for a Canon EOS M50
@@ -18,11 +40,25 @@ _CV2_ROTATION = {
 }
 
 
+def _is_blank(ret: bool, frame) -> bool:
+    """True if the read failed, returned nothing, or the frame is (near-)black.
+
+    Canon EOS Webcam Utility has been observed to intermittently deliver an
+    all-black feed while still reporting a successful read, so a plain
+    ``ret`` check is not enough.
+    """
+    if not ret or frame is None:
+        return True
+    return bool(frame.mean() < _BLANK_FRAME_MEAN_THRESHOLD)
+
+
 class OpenCVCamera(BaseCamera):
     def __init__(self, camera_id: int = 0, rotation: int = 0):
         self.camera_id = camera_id
         self.cap = None
         self.rotation = rotation  # degrees clockwise (0, 90, 180, 270)
+        self.backend_used = None
+        self._consecutive_bad_frames = 0
 
     def _rotate(self, frame):
         """Rotate *frame* by the configured amount; no-op if rotation is 0."""
@@ -32,25 +68,81 @@ class OpenCVCamera(BaseCamera):
         return frame
 
     def start_liveview(self):
-        if self.cap is None:
-            self.cap = cv2.VideoCapture(self.camera_id, _CAPTURE_BACKEND)
-        if not self.cap.isOpened():
-            raise CameraError(f"Kamera {self.camera_id} kann nicht geoeffnet werden")
+        if self.cap is not None:
+            return
+        last_error = None
+        for backend in _LIVEVIEW_BACKENDS:
+            cap = cv2.VideoCapture(self.camera_id, backend)
+            if cap.isOpened():
+                self.cap = cap
+                self.backend_used = backend
+                self._consecutive_bad_frames = 0
+                logger.info(
+                    "Kamera %s geoeffnet (Backend %s)", self.camera_id, backend
+                )
+                return
+            cap.release()
+            last_error = backend
+        raise CameraError(f"Kamera {self.camera_id} kann nicht geoeffnet werden")
 
     def stop_liveview(self):
         if self.cap is not None:
             self.cap.release()
             self.cap = None
+            self.backend_used = None
 
     def _ensure_open(self):
         if self.cap is None:
             self.start_liveview()
 
-    def capture(self, dest: Path) -> None:
+    def _reopen(self):
+        logger.warning(
+            "Kamera %s liefert wiederholt Schwarzbilder, versuche Neuverbindung",
+            self.camera_id,
+        )
+        self.stop_liveview()
+        try:
+            self.start_liveview()
+        except CameraError:
+            logger.warning("Neuverbindung zu Kamera %s fehlgeschlagen", self.camera_id)
+            raise
+        else:
+            logger.info("Neuverbindung zu Kamera %s erfolgreich", self.camera_id)
+        self._consecutive_bad_frames = 0
+
+    def _read_frame(self):
+        """Read a frame, retrying transient blank reads and auto-reopening the
+        capture device if blank frames persist. Raises CameraError if no
+        usable frame could be obtained."""
         self._ensure_open()
         ret, frame = self.cap.read()
-        if not ret:
-            raise CameraError("Kein Bild von Kamera erhalten")
+        if _is_blank(ret, frame):
+            # Transient blanks (e.g. right after opening) often clear up on
+            # an immediate retry, so try a couple more times before counting
+            # this as part of a persistent streak.
+            for _ in range(2):
+                ret, frame = self.cap.read()
+                if not _is_blank(ret, frame):
+                    break
+
+        if not _is_blank(ret, frame):
+            self._consecutive_bad_frames = 0
+            return frame
+
+        self._consecutive_bad_frames += 1
+        if self._consecutive_bad_frames == 1:
+            logger.warning("Schwarzbild von Kamera %s erhalten", self.camera_id)
+        if self._consecutive_bad_frames >= _MAX_CONSECUTIVE_BAD_FRAMES:
+            self._reopen()
+            ret, frame = self.cap.read()
+            if not _is_blank(ret, frame):
+                self._consecutive_bad_frames = 0
+                return frame
+
+        raise CameraError("Kein Bild von Kamera erhalten")
+
+    def capture(self, dest: Path) -> None:
+        frame = self._read_frame()
         frame = self._rotate(frame)
         cv2.imwrite(str(dest), frame)
 
@@ -58,10 +150,7 @@ class OpenCVCamera(BaseCamera):
         self.capture(dest)
 
     def get_preview_qimage(self) -> QtGui.QImage:
-        self._ensure_open()
-        ret, frame = self.cap.read()
-        if not ret:
-            raise CameraError("Kein Bild von Kamera erhalten")
+        frame = self._read_frame()
         frame = self._rotate(frame)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
