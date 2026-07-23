@@ -1,4 +1,6 @@
 # app/ui/widgets/live_view_widget.py
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore, QtConcurrent
