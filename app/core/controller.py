@@ -6,7 +6,7 @@ import psutil
 from PySide6 import QtCore
 
 from .config.settings import Settings
-from .camera import SimulatorCamera, GPhoto2Camera, OpenCVCamera
+from .camera import SimulatorCamera, GPhoto2Camera, OpenCVCamera, list_cameras
 from .excel.reader import ExcelReader, Learner
 from .excel.missed_writer import MissedWriter, MissedEntry
 from .imaging.processor import process_image
@@ -45,11 +45,39 @@ class MainController:
                 cam.start_liveview()
             except Exception as e:
                 cam = None
-                self.camera_fallback = True
-                self.camera_fallback_reason = str(e)
+                # The configured index may not exist on this machine (e.g. a
+                # laptop's built-in webcam sits at index 0, but the stored
+                # setting still points at index 1 from a previous device/OS).
+                # Try whatever camera actually is available before giving up
+                # to the placeholder-photo simulator.
+                fallback = next(
+                    (d for d in self._safe_list_cameras() if d.index != device_index), None
+                )
+                if fallback is not None:
+                    try:
+                        cam = OpenCVCamera(fallback.index, rotation=rotation)
+                        cam.start_liveview()
+                        self.settings.kamera.deviceIndex = fallback.index
+                        try:
+                            self.settings.save()
+                        except Exception:
+                            pass
+                    except Exception as e2:
+                        cam = None
+                        e = e2
+                if cam is None:
+                    self.camera_fallback = True
+                    self.camera_fallback_reason = str(e)
         if cam is None:
             cam = SimulatorCamera()
         return cam
+
+    @staticmethod
+    def _safe_list_cameras():
+        try:
+            return list_cameras()
+        except Exception:
+            return []
 
     def restart_camera(self):
         if hasattr(self.camera, "stop_liveview"):
