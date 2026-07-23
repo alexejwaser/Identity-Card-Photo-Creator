@@ -7,8 +7,21 @@ from pathlib import Path
 import cv2
 from PySide6 import QtGui
 from .base import BaseCamera, CameraError
+from .enumerate import resolve_backend_index
 
 logger = logging.getLogger(__name__)
+
+# Human-readable backend labels for the diagnostic log. Values not in the map
+# (e.g. a monkeypatched string in tests) are logged verbatim.
+_BACKEND_NAMES = {
+    getattr(cv2, "CAP_MSMF", -101): "MSMF",
+    getattr(cv2, "CAP_DSHOW", -102): "DSHOW",
+    getattr(cv2, "CAP_ANY", 0): "ANY",
+}
+
+
+def _backend_label(backend) -> str:
+    return _BACKEND_NAMES.get(backend, str(backend))
 
 # DirectShow is Windows-only; other platforms fall back to OpenCV's auto-detection.
 # Kept as the enumeration backend (enumerate.py pairs it with pygrabber's
@@ -69,11 +82,27 @@ class OpenCVCamera(BaseCamera):
     that hand-off; this class does not inspect frame content or guess
     about it."""
 
-    def __init__(self, camera_id: int = 0, rotation: int = 0):
+    def __init__(
+        self,
+        camera_id: int = 0,
+        rotation: int = 0,
+        device_name: str | None = None,
+        device_path: str | None = None,
+    ):
         self.camera_id = camera_id
-        self.cap = None
         self.rotation = rotation  # degrees clockwise (0, 90, 180, 270)
+        # Stable identifiers for the chosen device. When set, the correct index
+        # is re-resolved for whichever backend actually opens the camera, so the
+        # DirectShow-vs-MediaFoundation index mismatch cannot open the wrong
+        # device (or nothing). camera_id is used as the fallback/hint.
+        self.device_name = device_name
+        self.device_path = device_path
+        self.cap = None
         self.backend_used = None
+        # Log the negotiated resolution / frame brightness only once per open,
+        # so a real session log confirms the right device delivers real frames
+        # without spamming a line every tick.
+        self._open_diagnostics_logged = False
         # Guards every access to self.cap: the live preview (background task)
         # and an actual photo capture (also a background task) can otherwise
         # land on cap.read()/cap.release() at the same time, which is not
@@ -110,7 +139,18 @@ class OpenCVCamera(BaseCamera):
             if self.backend_used is not None and self.backend_used in backends:
                 backends = [self.backend_used] + [b for b in backends if b != self.backend_used]
             for backend in backends:
-                cap = cv2.VideoCapture(self.camera_id, backend)
+                # Re-resolve the index for this specific backend so the saved
+                # device opens on MSMF and DSHOW alike; falls back to the stored
+                # camera_id when no name/path is set or resolution is unavailable.
+                index = resolve_backend_index(
+                    backend,
+                    name=self.device_name,
+                    path=self.device_path,
+                    fallback_index=self.camera_id,
+                )
+                if index is None:
+                    index = self.camera_id
+                cap = cv2.VideoCapture(index, backend)
                 if cap.isOpened():
                     # Reduces internal frame buffering (where supported), which
                     # otherwise shows up as visible lag between the live scene
@@ -118,8 +158,12 @@ class OpenCVCamera(BaseCamera):
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     self.cap = cap
                     self.backend_used = backend
+                    self._open_diagnostics_logged = False
                     logger.info(
-                        "Kamera %s geoeffnet (Backend %s)", self.camera_id, backend
+                        "Kamera '%s' geoeffnet: Index %s, Backend %s",
+                        self.device_name or self.camera_id,
+                        index,
+                        _backend_label(backend),
                     )
                     return
                 cap.release()
@@ -146,7 +190,30 @@ class OpenCVCamera(BaseCamera):
         ret, frame = self.cap.read()
         if not ret or frame is None:
             raise CameraError("Kein Bild von Kamera erhalten")
+        if not self._open_diagnostics_logged:
+            self._log_first_frame(frame)
         return frame
+
+    def _log_first_frame(self, frame) -> None:
+        """Log the negotiated resolution and this device's mean frame
+        brightness once per open. A near-zero mean here (with a virtual webcam
+        like EOS Webcam Utility) means the driver is delivering black rather
+        than its placeholder/live feed, which is exactly the signal needed to
+        tell a wrong-device open apart from a genuinely dark scene."""
+        self._open_diagnostics_logged = True
+        try:
+            h, w = frame.shape[:2]
+            logger.info(
+                "Kamera '%s' erstes Bild: %sx%s, mittlere Helligkeit %.1f "
+                "(Backend %s)",
+                self.device_name or self.camera_id,
+                w,
+                h,
+                float(frame.mean()),
+                _backend_label(self.backend_used),
+            )
+        except Exception:
+            pass
 
     def capture(self, dest: Path) -> None:
         with self._locked():

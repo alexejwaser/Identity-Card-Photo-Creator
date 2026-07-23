@@ -28,6 +28,10 @@ class SettingsDialog(QtWidgets.QDialog):
                 self._notify('Excel-Spalten', str(e), level='warning')
 
         self._preview_camera = None
+        # index -> CameraDevice for the currently listed devices, so name/path
+        # (the stable identifiers persisted and used to re-resolve the device
+        # per backend) can be looked up from the combo's index selection.
+        self._devices_by_index = {}
 
         outer = QtWidgets.QVBoxLayout(self)
 
@@ -112,7 +116,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self.btn_save_camera_defaults.clicked.connect(self._save_camera_defaults)
 
         self.cmb_camera.currentIndexChanged.connect(self._restart_preview)
-        self.cmb_rotation.currentIndexChanged.connect(self._restart_preview)
+        # Rotation is applied in software on each frame, so it must NOT reopen
+        # the device - reopening churns fragile virtual webcam drivers (e.g.
+        # EOS Webcam Utility) and can wedge them into delivering black.
+        self.cmb_rotation.currentIndexChanged.connect(self._apply_rotation)
         self.cmb_device.currentIndexChanged.connect(self._restart_preview)
         self.spin_width.valueChanged.connect(self._update_crop_guide)
         self.spin_height.valueChanged.connect(self._update_crop_guide)
@@ -251,12 +258,33 @@ class SettingsDialog(QtWidgets.QDialog):
         except Exception as e:
             self._notify('Kameras', str(e), level='warning', show=False)
             devices = []
+        self._devices_by_index = {d.index: d for d in devices}
         for d in devices:
             self.cmb_device.addItem(d.name, d.index)
-        idx = self.cmb_device.findData(getattr(self.settings.kamera, 'deviceIndex', 1))
+        # Prefer re-selecting the saved device by its stable path/name, so the
+        # right entry is highlighted even if the index shifted between sessions;
+        # fall back to the saved index.
+        idx = self._find_saved_device_row(devices)
         self.cmb_device.setCurrentIndex(idx if idx >= 0 else 0)
         self.cmb_device.blockSignals(False)
         self._restart_preview()
+
+    def _find_saved_device_row(self, devices) -> int:
+        saved_path = getattr(self.settings.kamera, 'devicePath', '') or ''
+        saved_name = getattr(self.settings.kamera, 'deviceName', '') or ''
+        if saved_path:
+            for row, d in enumerate(devices):
+                if d.path and d.path == saved_path:
+                    return row
+        if saved_name:
+            for row, d in enumerate(devices):
+                if d.name == saved_name:
+                    return row
+        return self.cmb_device.findData(getattr(self.settings.kamera, 'deviceIndex', 1))
+
+    def _selected_device(self):
+        data = self.cmb_device.currentData()
+        return self._devices_by_index.get(data)
 
     def _reconnect_camera(self):
         self.reconnect_requested = True
@@ -268,16 +296,24 @@ class SettingsDialog(QtWidgets.QDialog):
         if backend != 'opencv' or self.cmb_device.currentData() is None:
             self.preview_widget.set_camera(None)
             return
+        device = self._selected_device()
         try:
             cam = OpenCVCamera(
                 self.cmb_device.currentData(),
                 rotation=[0, 90, 180, 270][self.cmb_rotation.currentIndex()],
+                device_name=device.name if device else None,
+                device_path=device.path if device else None,
             )
             cam.start_liveview()
             self._preview_camera = cam
             self.preview_widget.set_camera(cam)
         except Exception:
             self.preview_widget.set_camera(None)
+
+    def _apply_rotation(self):
+        """Update the preview rotation in place without reopening the device."""
+        if self._preview_camera is not None:
+            self._preview_camera.rotation = [0, 90, 180, 270][self.cmb_rotation.currentIndex()]
 
     def _stop_preview(self):
         if self._preview_camera is not None:
@@ -304,6 +340,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.settings.kamera.rotation = [0, 90, 180, 270][self.cmb_rotation.currentIndex()]
         device_idx = self.cmb_device.currentData()
         self.settings.kamera.deviceIndex = device_idx if device_idx is not None else 1
+        device = self._selected_device()
+        self.settings.kamera.deviceName = device.name if device else ''
+        self.settings.kamera.devicePath = (device.path or '') if device else ''
         self.settings.bild.breite = self.spin_width.value()
         self.settings.bild.hoehe = self.spin_height.value()
 

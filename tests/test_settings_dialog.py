@@ -16,9 +16,11 @@ class FakePreviewCamera:
     """Stand-in for OpenCVCamera used by the dialog preview - touches no
     real hardware."""
 
-    def __init__(self, camera_id=0, rotation=0):
+    def __init__(self, camera_id=0, rotation=0, device_name=None, device_path=None):
         self.camera_id = camera_id
         self.rotation = rotation
+        self.device_name = device_name
+        self.device_path = device_path
         self.started = False
 
     def start_liveview(self):

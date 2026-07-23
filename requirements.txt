@@ -7,3 +7,4 @@ pytest-qt
 psutil
 pydantic
 pygrabber; sys_platform == "win32"
+cv2_enumerate_cameras; sys_platform == "win32"

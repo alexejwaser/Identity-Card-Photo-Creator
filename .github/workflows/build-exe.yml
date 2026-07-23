@@ -35,6 +35,9 @@ jobs:
         run: |
           pyinstaller --onedir --windowed -n LegicCardCreator --icon=icon.ico `
             --add-data "app\ui\widgets\control_panel.ui;app\ui\widgets" `
+            --hidden-import cv2_enumerate_cameras `
+            --collect-submodules cv2_enumerate_cameras `
+            --hidden-import pygrabber `
             app\main.py
 
       - name: Package as ZIP

@@ -19,7 +19,7 @@ class FlakyOpenCVCamera:
     even though it's a real, currently-detected device (simulates a
     transient driver hiccup, not a missing device)."""
 
-    def __init__(self, camera_id, rotation=0):
+    def __init__(self, camera_id, rotation=0, device_name=None, device_path=None):
         self.camera_id = camera_id
 
     def start_liveview(self):
@@ -54,7 +54,7 @@ def test_missing_device_falls_back_to_detected_camera(tmp_path, monkeypatch):
     opened = {}
 
     class WorkingOpenCVCamera:
-        def __init__(self, camera_id, rotation=0):
+        def __init__(self, camera_id, rotation=0, device_name=None, device_path=None):
             self.camera_id = camera_id
 
         def start_liveview(self):

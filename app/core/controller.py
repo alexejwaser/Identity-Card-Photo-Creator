@@ -31,6 +31,8 @@ class MainController:
         backend = getattr(self.settings.kamera, "backend", "opencv")
         rotation = getattr(self.settings.kamera, "rotation", 270)
         device_index = getattr(self.settings.kamera, "deviceIndex", 1)
+        device_name = getattr(self.settings.kamera, "deviceName", "") or None
+        device_path = getattr(self.settings.kamera, "devicePath", "") or None
         self.camera_fallback = False
         self.camera_fallback_reason = ""
         cam = None
@@ -41,7 +43,12 @@ class MainController:
         else:
             # Default: OpenCV (Webcam-Modus, z.B. Canon EOS M50 per USB)
             try:
-                cam = OpenCVCamera(device_index, rotation=rotation)
+                cam = OpenCVCamera(
+                    device_index,
+                    rotation=rotation,
+                    device_name=device_name,
+                    device_path=device_path,
+                )
                 cam.start_liveview()
             except Exception as e:
                 cam = None
@@ -58,15 +65,24 @@ class MainController:
                 # slow startup, so leave the configured index alone and fall
                 # back to the simulator for this attempt instead.
                 detected = self._safe_list_cameras()
-                configured_exists = any(d.index == device_index for d in detected)
+                configured_exists = self._device_present(
+                    detected, device_index, device_name, device_path
+                )
                 fallback = (
                     None if configured_exists else next(iter(detected), None)
                 )
                 if fallback is not None:
                     try:
-                        cam = OpenCVCamera(fallback.index, rotation=rotation)
+                        cam = OpenCVCamera(
+                            fallback.index,
+                            rotation=rotation,
+                            device_name=fallback.name,
+                            device_path=getattr(fallback, "path", None),
+                        )
                         cam.start_liveview()
                         self.settings.kamera.deviceIndex = fallback.index
+                        self.settings.kamera.deviceName = fallback.name or ""
+                        self.settings.kamera.devicePath = getattr(fallback, "path", None) or ""
                         try:
                             self.settings.save()
                         except Exception:
@@ -87,6 +103,20 @@ class MainController:
             return list_cameras()
         except Exception:
             return []
+
+    @staticmethod
+    def _device_present(detected, device_index, device_name, device_path) -> bool:
+        """Whether the configured device is among *detected*. Prefers the stable
+        path/name (so a transient index shift is not mistaken for a missing
+        device); falls back to the index when no name/path was saved."""
+        if device_path and any(getattr(d, "path", None) == device_path for d in detected):
+            return True
+        if device_name and any(d.name == device_name for d in detected):
+            return True
+        if device_path or device_name:
+            # A name/path was configured but not found among detected devices.
+            return False
+        return any(d.index == device_index for d in detected)
 
     def restart_camera(self):
         if hasattr(self.camera, "stop_liveview"):

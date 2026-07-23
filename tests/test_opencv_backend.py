@@ -113,6 +113,32 @@ def test_reopen_reuses_last_working_backend(monkeypatch):
     assert attempts == ["MSMF", "DSHOW", "DSHOW"]
 
 
+def test_start_liveview_opens_resolved_index_per_backend(monkeypatch):
+    """When a device name/path is saved, the index is re-resolved for the
+    backend actually opening the camera - so the DirectShow-vs-MediaFoundation
+    index mismatch cannot open the wrong device."""
+    _patch_backends(monkeypatch, ["MSMF", "DSHOW"])
+    opened = []
+
+    def factory(index, backend):
+        opened.append((index, backend))
+        return FakeCapture(index, backend, opens=(backend == "MSMF"))
+
+    monkeypatch.setattr(backend_mod.cv2, "VideoCapture", factory)
+    # Saved index is a stale DirectShow index (1); resolution returns the real
+    # MSMF index (4) for this device.
+    monkeypatch.setattr(
+        backend_mod, "resolve_backend_index",
+        lambda backend, name, path, fallback_index: 4 if backend == "MSMF" else fallback_index,
+    )
+
+    cam = OpenCVCamera(1, device_name="EOS Webcam Utility", device_path="usb#eos")
+    cam.start_liveview()
+
+    assert opened[0] == (4, "MSMF")
+    assert cam.backend_used == "MSMF"
+
+
 def test_get_preview_qimage_returns_whatever_frame_is_read(monkeypatch):
     """A dark/placeholder frame (e.g. Canon EOS Webcam Utility's "connect
     your camera" graphic before it detects the physical camera) is just
