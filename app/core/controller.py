@@ -6,7 +6,7 @@ import psutil
 from PySide6 import QtCore
 
 from .config.settings import Settings
-from .camera import SimulatorCamera, GPhoto2Camera, OpenCVCamera
+from .camera import SimulatorCamera, GPhoto2Camera, make_webcam_camera, list_cameras
 from .excel.reader import ExcelReader, Learner
 from .excel.missed_writer import MissedWriter, MissedEntry
 from .imaging.processor import process_image
@@ -30,6 +30,9 @@ class MainController:
     def _init_camera(self):
         backend = getattr(self.settings.kamera, "backend", "opencv")
         rotation = getattr(self.settings.kamera, "rotation", 270)
+        device_index = getattr(self.settings.kamera, "deviceIndex", 1)
+        device_name = getattr(self.settings.kamera, "deviceName", "") or None
+        device_path = getattr(self.settings.kamera, "devicePath", "") or None
         self.camera_fallback = False
         self.camera_fallback_reason = ""
         cam = None
@@ -38,18 +41,83 @@ class MainController:
         elif backend == "simulator":
             cam = SimulatorCamera()
         else:
-            # Default: OpenCV (Webcam-Modus, z.B. Canon EOS M50 per USB)
+            # Default: Webcam-Modus (z.B. Canon EOS M50/R100 per USB). On
+            # Windows this captures via DirectShow/pygrabber; elsewhere OpenCV.
             try:
-                cam = OpenCVCamera(1, rotation=rotation)
+                cam = make_webcam_camera(
+                    device_index,
+                    rotation=rotation,
+                    device_name=device_name,
+                    device_path=device_path,
+                )
                 cam.start_liveview()
-                self.current_cam_id = 1
             except Exception as e:
                 cam = None
-                self.camera_fallback = True
-                self.camera_fallback_reason = str(e)
+                # Only auto-switch to a different camera if the configured
+                # index genuinely doesn't exist on this machine (e.g. a
+                # laptop's built-in webcam sits at index 0, but the stored
+                # setting still points at index 1 from a previous device/OS).
+                # A flaky driver (observed with Canon EOS Webcam Utility,
+                # which can intermittently fail to open for a stretch before
+                # recovering on its own) is a different situation: silently
+                # switching to - and persisting - some other camera on every
+                # transient hiccup would fight the operator's actual choice
+                # and adds a slow device re-enumeration on top of an already
+                # slow startup, so leave the configured index alone and fall
+                # back to the simulator for this attempt instead.
+                detected = self._safe_list_cameras()
+                configured_exists = self._device_present(
+                    detected, device_index, device_name, device_path
+                )
+                fallback = (
+                    None if configured_exists else next(iter(detected), None)
+                )
+                if fallback is not None:
+                    try:
+                        cam = make_webcam_camera(
+                            fallback.index,
+                            rotation=rotation,
+                            device_name=fallback.name,
+                            device_path=getattr(fallback, "path", None),
+                        )
+                        cam.start_liveview()
+                        self.settings.kamera.deviceIndex = fallback.index
+                        self.settings.kamera.deviceName = fallback.name or ""
+                        self.settings.kamera.devicePath = getattr(fallback, "path", None) or ""
+                        try:
+                            self.settings.save()
+                        except Exception:
+                            pass
+                    except Exception as e2:
+                        cam = None
+                        e = e2
+                if cam is None:
+                    self.camera_fallback = True
+                    self.camera_fallback_reason = str(e)
         if cam is None:
             cam = SimulatorCamera()
         return cam
+
+    @staticmethod
+    def _safe_list_cameras():
+        try:
+            return list_cameras()
+        except Exception:
+            return []
+
+    @staticmethod
+    def _device_present(detected, device_index, device_name, device_path) -> bool:
+        """Whether the configured device is among *detected*. Prefers the stable
+        path/name (so a transient index shift is not mistaken for a missing
+        device); falls back to the index when no name/path was saved."""
+        if device_path and any(getattr(d, "path", None) == device_path for d in detected):
+            return True
+        if device_name and any(d.name == device_name for d in detected):
+            return True
+        if device_path or device_name:
+            # A name/path was configured but not found among detected devices.
+            return False
+        return any(d.index == device_index for d in detected)
 
     def restart_camera(self):
         if hasattr(self.camera, "stop_liveview"):
@@ -58,11 +126,6 @@ class MainController:
         if hasattr(self.camera, "start_liveview"):
             self.camera.start_liveview()
         return self.camera
-
-    def switch_camera(self):
-        if hasattr(self.camera, "switch_camera"):
-            self.current_cam_id = getattr(self, "current_cam_id", 0) + 1
-            self.camera.switch_camera(self.current_cam_id)
 
     # excel handling ---------------------------------------------------------
     def load_excel(self, path: Path) -> List[str]:

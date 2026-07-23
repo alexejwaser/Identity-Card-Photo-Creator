@@ -10,17 +10,21 @@ import psutil
 
 from ..core.config.settings import Settings, CONFIG_DIR
 from ..core.controller import MainController
+from ..version import get_version
 from ..core.excel.reader import ExcelReader, Learner
 from ..core.excel.missed_writer import MissedWriter, MissedEntry
 from ..core.imaging.processor import process_image
 from .settings_dialog import SettingsDialog
 from .class_search_dialog import ClassSearchDialog
 from .onboarding_dialog import OnboardingDialog
+from .icons import github_icon, icon
 from .widgets import ControlPanel
 
 
 class MainWindow(QtWidgets.QMainWindow):
     """Main GUI window for the application."""
+
+    _GITHUB_URL = 'https://github.com/alexejwaser/Identity-Card-Photo-Creator'
 
     def __init__(
         self,
@@ -54,8 +58,29 @@ class MainWindow(QtWidgets.QMainWindow):
             self.controller.reader = value
 
     def _setup_ui(self):
-        self.setWindowTitle('LegicCard-Creator')
+        self._version = get_version()
+        self.setWindowTitle(f'LegicCard-Creator v{self._version}')
         self.setMinimumSize(900, 620)
+        # Version in the bottom-left status bar, so the running build is always
+        # identifiable at a glance (matches the version tagged on GitHub).
+        version_label = QtWidgets.QLabel(f'v{self._version}')
+        version_label.setStyleSheet('color: gray; font-size:11px;')
+        self.statusBar().addWidget(version_label)
+        # Author credit + a clickable GitHub mark that opens the project repo.
+        author_label = QtWidgets.QLabel('erstellt von Alexej Waser')
+        author_label.setStyleSheet('color: gray; font-size:11px;')
+        self.statusBar().addWidget(author_label)
+        self.btn_github = QtWidgets.QToolButton()
+        self.btn_github.setIcon(github_icon())
+        self.btn_github.setIconSize(QtCore.QSize(14, 14))
+        self.btn_github.setAutoRaise(True)  # flat, blends into the status bar
+        self.btn_github.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_github.setToolTip('GitHub-Repository öffnen')
+        self.btn_github.clicked.connect(
+            lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(self._GITHUB_URL))
+        )
+        self.statusBar().addWidget(self.btn_github)
+        self.statusBar().setSizeGripEnabled(False)
         central = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(central)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -76,12 +101,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cmb_location.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.cmb_class.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.cmb_class.setMaxVisibleItems(25)
-        search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
-        self.btn_search_class.setIcon(search_icon)
+        # Consistent lucide.dev iconography on the major buttons, placed to the
+        # left of each label. Icon-only buttons (search, settings) keep their
+        # tooltips for discoverability.
+        _icon_px = QtCore.QSize(16, 16)
+        for btn, name in (
+            (self.btn_excel, 'file-spreadsheet'),
+            (self.btn_capture, 'camera'),
+            (self.btn_skip, 'skip-forward'),
+            (self.btn_add_person, 'user-plus'),
+            (self.btn_finish, 'check'),
+            (self.btn_settings, 'settings'),
+            (self.btn_search_class, 'search'),
+        ):
+            btn.setIcon(icon(name))
+            btn.setIconSize(_icon_px)
         self.btn_search_class.setToolTip('Klasse suchen')
-        icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogDetailedView)
-        self.btn_settings.setIcon(icon)
         self.btn_settings.setToolTip('Einstellungen')
+        # QToolButton carries a label, so show the icon beside the text.
+        self.btn_jump_to.setIcon(icon('users'))
+        self.btn_jump_to.setIconSize(_icon_px)
+        self.btn_jump_to.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
 
         self.btn_help = QtWidgets.QPushButton('?')
         self.btn_help.setFixedWidth(28)
@@ -102,6 +142,7 @@ class MainWindow(QtWidgets.QMainWindow):
         fps = self.settings.kamera.liveviewFpsZiel
         self.preview = LiveViewWidget(self.camera, fps)
         self.preview.set_overlay_image(self.settings.overlay.image)
+        self.preview.set_crop_aspect((self.settings.bild.breite, self.settings.bild.hoehe))
         preview_layout = QtWidgets.QVBoxLayout()
         preview_layout.setSpacing(8)
 
@@ -148,18 +189,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         preview_layout.addWidget(self.preview)
 
-        # Camera-switch button lives in the control area, but kept here for
-        # visual grouping with the preview; may be moved to ControlPanel later.
-        self.btn_switch_camera = QtWidgets.QPushButton('Kamera wechseln')
-        self.btn_switch_camera.setToolTip('C')
-        self.btn_switch_camera.setFixedWidth(140)
-        preview_layout.addWidget(self.btn_switch_camera)
-
         # Always-visible shortcut legend so a new operator never has to
         # discover keyboard shortcuts via hover tooltips.
         self.label_shortcuts = QtWidgets.QLabel(
             '[Leertaste] Foto aufnehmen    [S] Überspringen    '
-            '[A] Neue Person    [F] Fertig    [C] Kamera wechseln'
+            '[A] Neue Person    [F] Fertig'
         )
         self.label_shortcuts.setStyleSheet('color: gray; font-size:11px;')
         self.label_shortcuts.setAlignment(QtCore.Qt.AlignCenter)
@@ -178,7 +212,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_skip.clicked.connect(self.skip_learner)
         self.btn_add_person.clicked.connect(self.add_person)
         self.btn_finish.clicked.connect(self.finish_class)
-        self.btn_switch_camera.clicked.connect(self.switch_camera)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_search_class.clicked.connect(self.search_class)
         self.btn_jump_to.setEnabled(False)
@@ -190,7 +223,6 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QShortcut(QtGui.QKeySequence('S'), self, self.skip_learner)
         QtGui.QShortcut(QtGui.QKeySequence('F'), self, self.finish_class)
         QtGui.QShortcut(QtGui.QKeySequence('A'), self, self.add_person)
-        QtGui.QShortcut(QtGui.QKeySequence('C'), self, self.switch_camera)
 
     # ------------------------------------------------------------------
     def _notify(
@@ -217,8 +249,26 @@ class MainWindow(QtWidgets.QMainWindow):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Excel auswählen', filter='Excel (*.xlsx)')
         if not path:
             return
+        # Confirm before opening, so an accidental pick in the file dialog does
+        # not silently swap the active roster.
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            'Datei öffnen',
+            f'Bist du sicher dass du diese Datei öffnen willst:\n{Path(path).name}',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+        self._load_excel_from_path(Path(path))
+
+    def _load_excel_from_path(self, path: Path):
+        """Point self.reader at *path* and populate the location dropdown.
+
+        Shared by the file-picker flow (load_excel) and the test-mode flow
+        (_activate_test_mode)."""
         try:
-            self.reader = ExcelReader(Path(path), self.settings.excelMapping.model_dump())
+            self.reader = ExcelReader(path, self.settings.excelMapping.model_dump())
             locations = self.reader.locations()
         except Exception as e:
             self._notify('Excel', str(e), level='error')
@@ -226,6 +276,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.controls.cmb_location.clear()
         self.controls.cmb_location.addItems(locations)
         self._update_buttons()
+
+    def _activate_test_mode(self):
+        """Generate a fresh randomized placeholder roster, load it as the active
+        roster, and redirect photo/zip output to a dedicated Testdaten folder
+        for the rest of the session (session-only, not saved to settings.json)."""
+        from ..core.excel.test_data import generate_test_roster
+        test_dir = CONFIG_DIR / 'Testdaten'
+        roster_path = test_dir / 'Testroster.xlsx'
+        generate_test_roster(roster_path, self.settings.excelMapping.model_dump())
+        # Session-only redirect (not persisted) so test captures can never land
+        # in or overwrite the real output folder.
+        self.settings.ausgabeBasisPfad = test_dir / 'Ausgabe'
+        self.settings.neueLernendeBasisPfad = test_dir / 'Neue Lernende'
+        self._load_excel_from_path(roster_path)
+        self._notify(
+            'Testmodus',
+            f'Testdaten geladen: {roster_path}\n'
+            f'Fotos werden für diese Sitzung in {self.settings.ausgabeBasisPfad} gespeichert.\n'
+            'Lade eine echte Excel-Datei oder starte die App neu, um zu echten Daten zurückzukehren.',
+            level='info',
+        )
 
     def update_classes(self, location: str):
         classes = self.controller.classes_for_location(location)
@@ -400,7 +471,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _set_busy(self, busy: bool):
         self.busy = busy
-        for btn in [self.btn_excel, self.btn_settings, self.btn_switch_camera]:
+        for btn in [self.btn_excel, self.btn_settings]:
             btn.setEnabled(not busy)
         self._update_buttons()
 
@@ -418,6 +489,12 @@ class MainWindow(QtWidgets.QMainWindow):
         learner = self.controller.learners[self.controller.current]
         location = self.cmb_location.currentText()
 
+        # Pause the live-preview reads while the background task grabs the
+        # actual capture frame: the same cv2.VideoCapture handle isn't safe
+        # to read from two threads at once, and contention here was a source
+        # of UI stutter during capture.
+        self.preview.timer.stop()
+
         def task():
             return self.controller.capture(learner, location)
 
@@ -434,6 +511,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._capture_finished(None, learner, location, raw_path)
 
     def _capture_finished(self, watcher: QtCore.QFutureWatcher | None, learner: Learner, location: str, raw_path: Path | None):
+        # The capture task (which reads from the camera) has finished by the
+        # time this runs (either synchronously above, or via watcher.result()
+        # below), so it's safe to resume the live preview now.
+        self.preview.timer.start()
         try:
             if watcher is not None:
                 raw_path = watcher.result()
@@ -647,51 +728,79 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.addWidget(lbl)
         h = QtWidgets.QHBoxLayout()
         retry = QtWidgets.QPushButton('Erneut fotografieren  [Esc]')
-        ok_btn = QtWidgets.QPushButton('OK  [Leertaste]')
+        ok_btn = QtWidgets.QPushButton('OK  [Leertaste / Enter]')
+        # Enter previously discarded the photo because the "Erneut fotografieren"
+        # button held focus and got triggered. Disable autoDefault on both so no
+        # button auto-fires on Enter; the explicit shortcuts below decide, making
+        # Enter keep the photo just like the spacebar.
+        for b in (retry, ok_btn):
+            b.setAutoDefault(False)
+            b.setDefault(False)
+        retry.setToolTip('Foto verwerfen und neu aufnehmen (Esc)')
+        ok_btn.setToolTip('Foto behalten (Leertaste oder Enter)')
         h.addWidget(retry)
         h.addWidget(ok_btn)
         vbox.addLayout(h)
         result = {'ok': True}
         retry.clicked.connect(lambda: (result.update(ok=False), dlg.accept()))
         ok_btn.clicked.connect(dlg.accept)
-        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Space), dlg, ok_btn.click)
+        for key in (QtCore.Qt.Key_Space, QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            QtGui.QShortcut(QtGui.QKeySequence(key), dlg, ok_btn.click)
         QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Escape), dlg, retry.click)
         dlg.exec()
         return result['ok']
-
-    def switch_camera(self):
-        if hasattr(self.controller.camera, 'switch_camera'):
-            try:
-                self.controller.switch_camera()
-                self.camera = self.controller.camera
-                self.preview.set_camera(self.camera)
-            except Exception as e:
-                self._notify('Kamera', str(e), level='warning')
 
     def closeEvent(self, event):
         self.controller.camera.stop_liveview()
         super().closeEvent(event)
 
     def open_settings(self):
+        # Only one process/handle can hold a webcam at a time, so pause the
+        # main live view before the Settings dialog (which opens its own
+        # preview camera) and resume/restart it afterwards.
+        self.preview.timer.stop()
+        if hasattr(self.controller.camera, 'stop_liveview'):
+            self.controller.camera.stop_liveview()
         dlg = SettingsDialog(
             self.settings, self, logger=self.logger.getChild('SettingsDialog'), reader=self.reader
         )
         before_backend = self.settings.kamera.backend
+        before_rotation = self.settings.kamera.rotation
+        before_device = self.settings.kamera.deviceIndex
+        before_breite = self.settings.bild.breite
+        before_hoehe = self.settings.bild.hoehe
         before_overlay = self.settings.overlay.image
-        if dlg.exec() == QtWidgets.QDialog.Accepted:
-            if self.settings.kamera.backend != before_backend:
-                # Delegate full camera restart to the controller so there is
-                # a single source of truth for camera initialisation.
-                try:
-                    self.camera = self.controller.restart_camera()
-                except Exception as e:
-                    self._notify('Kamera', str(e), level='warning')
-                    self.camera = self.controller.camera
-                self.preview.set_camera(self.camera)
-                self._update_camera_banner()
-            if self.settings.overlay.image != before_overlay:
-                self.preview.set_overlay_image(self.settings.overlay.image)
+        accepted = dlg.exec() == QtWidgets.QDialog.Accepted
+        # Checked regardless of accept/reject: the dialog's "Als Standard
+        # speichern" button can persist camera settings mid-dialog, so
+        # self.settings may already reflect a change even if the operator
+        # ultimately cancels out of the rest of the form.
+        changed = (
+            self.settings.kamera.backend != before_backend
+            or self.settings.kamera.rotation != before_rotation
+            or self.settings.kamera.deviceIndex != before_device
+            or getattr(dlg, 'reconnect_requested', False)
+        )
+        if changed:
+            # Delegate full camera restart to the controller so there is
+            # a single source of truth for camera initialisation.
+            try:
+                self.camera = self.controller.restart_camera()
+            except Exception as e:
+                self._notify('Kamera', str(e), level='warning')
+                self.camera = self.controller.camera
+            self.preview.set_camera(self.camera)
+            self._update_camera_banner()
+        elif hasattr(self.controller.camera, 'start_liveview'):
+            self.controller.camera.start_liveview()
+        if self.settings.bild.breite != before_breite or self.settings.bild.hoehe != before_hoehe:
+            self.preview.set_crop_aspect((self.settings.bild.breite, self.settings.bild.hoehe))
+        if accepted and self.settings.overlay.image != before_overlay:
+            self.preview.set_overlay_image(self.settings.overlay.image)
+        self.preview.timer.start()
         self._update_buttons()
+        if accepted and getattr(dlg, '_test_mode_requested', False):
+            self._activate_test_mode()
 
     def _update_buttons(self):
         ready = bool(self.reader) and bool(self.cmb_class.currentText())

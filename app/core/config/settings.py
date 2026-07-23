@@ -83,6 +83,9 @@ DEFAULTS = {
         'format': 'JPEG',
         'timeoutMs': 5000,
         'rotation': 270,
+        'deviceIndex': 1,
+        'deviceName': '',
+        'devicePath': '',
     },
     'zip': {'maxAnzahl': None, 'maxGroesseMB': None},
     'copyright': {'artist': '', 'copyright': ''},
@@ -146,6 +149,17 @@ class KameraSettings(BaseModel):
     # Wert für die Canon EOS M50 im Webcam-Modus, da der Sensor im
     # Querformat ausgibt aber ein Hochformat benötigt wird.
     rotation: int = 270
+    # Index des Kamera-Geräts (cv2.VideoCapture). Standard 1, da Index 0
+    # meist die eingebaute Laptop-Webcam ist, nicht die gewünschte externe.
+    # Nur noch Fallback/Hinweis: das Gerät wird bevorzugt über Name/Pfad
+    # aufgelöst, damit die Auswahl unabhängig von der Backend-Reihenfolge
+    # (Media Foundation vs. DirectShow) das richtige Gerät öffnet.
+    deviceIndex: int = 1
+    # Stabile Kennung des gewählten Geräts. deviceName ist der Anzeigename
+    # (z.B. "EOS Webcam Utility"), devicePath der OS-Gerätepfad (bevorzugt,
+    # da eindeutig). Leer = altes Verhalten (nur Index).
+    deviceName: str = ''
+    devicePath: str = ''
 
 
 class ZipSettings(BaseModel):

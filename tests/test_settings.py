@@ -43,6 +43,18 @@ def test_save_and_load_roundtrip(tmp_path):
     assert loaded.ausgabeBasisPfad == tmp_path
 
 
+def test_kamera_device_index_roundtrip(tmp_path):
+    cfg = tmp_path / "settings.json"
+    # Default value
+    settings = Settings.load(cfg)
+    assert settings.kamera.deviceIndex == 1
+    # Change, save, reload
+    settings.kamera.deviceIndex = 3
+    settings.save(cfg)
+    reloaded = Settings.load(cfg)
+    assert reloaded.kamera.deviceIndex == 3
+
+
 def test_overlay_path_validation(tmp_path):
     cfg = tmp_path / "settings.json"
     data = DEFAULTS.copy()

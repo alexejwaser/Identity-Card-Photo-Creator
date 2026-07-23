@@ -7,7 +7,9 @@ Desktop-App zur schnellen Erstellung von Portraitfotos für Klassen und Gruppen,
 
 ## Features
 - Excel-Roster als Datenquelle (Standort/Klasse/Lernende), automatischer Abgleich beim Fotografieren
-- Live-Vorschau mit konfigurierbarem Overlay und Kamera-Rotation
+- Live-Vorschau mit konfigurierbarem Overlay, Kamera-Rotation und Bildausschnitt passend zur Zielauflösung
+- Kamera-Auswahl, Auflösung und Vorschau direkt in den Einstellungen konfigurierbar
+- Testmodus: erzeugt auf Knopfdruck eine zufällige Platzhalter-Excel-Datei, um den kompletten Ablauf ohne echte Daten zu testen
 - Automatische ZIP-Bündelung der Fotos pro Klasse
 - Unterstützung für USB-Webcam (OpenCV), DSLR via `gphoto2`, oder Simulator-Modus (kein Kamera-Hardware nötig)
 
@@ -51,7 +53,6 @@ Beim Abschluss einer Klasse werden alle Fotos automatisch zu einem ZIP-Archiv zu
 | S | Lernende(n) überspringen |
 | A | Person hinzufügen |
 | F | Klasse abschließen |
-| C | Kamera wechseln |
 
 ## Tests
 ```bash
