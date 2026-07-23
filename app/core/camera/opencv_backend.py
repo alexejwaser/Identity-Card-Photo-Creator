@@ -26,18 +26,14 @@ if sys.platform == "win32":
 else:
     _LIVEVIEW_BACKENDS = [cv2.CAP_ANY]
 
-# Number of consecutive blank/failed frames tolerated before the capture
-# device is fully reopened (mirrors what a PC restart does, but scoped to
-# just this VideoCapture instance).
+# Number of consecutive failed reads tolerated before the capture device is
+# fully reopened (mirrors what a PC restart does, but scoped to just this
+# VideoCapture instance).
 _MAX_CONSECUTIVE_BAD_FRAMES = 5
-# Minimum time between reopen attempts. Some virtual webcam drivers (e.g.
-# Canon EOS Webcam Utility) take up to ~30s after launch before delivering
-# real frames; without a cooldown the bad-frame threshold above would be hit
-# every ~0.25s during that window, tearing down and rebuilding the capture
-# graph dozens of times a second for no benefit and adding needless CPU load.
+# Minimum time between reopen attempts, so a genuinely broken connection
+# doesn't get its capture graph torn down and rebuilt dozens of times a
+# second for no benefit.
 _REOPEN_COOLDOWN_SECONDS = 5.0
-# A frame whose mean pixel value falls below this is treated as black.
-_BLANK_FRAME_MEAN_THRESHOLD = 2.0
 # Cap on how long any caller (GUI thread or background task) waits for the
 # camera lock. A live-preview read can legitimately take a few seconds when
 # the driver is having a bad moment, but if cv2 ever truly wedges inside a
@@ -63,16 +59,21 @@ _CV2_ROTATION = {
 }
 
 
-def _is_blank(ret: bool, frame) -> bool:
-    """True if the read failed, returned nothing, or the frame is (near-)black.
+def _read_failed(ret: bool, frame) -> bool:
+    """True only if the read itself failed (no frame at all).
 
-    Canon EOS Webcam Utility has been observed to intermittently deliver an
-    all-black feed while still reporting a successful read, so a plain
-    ``ret`` check is not enough.
+    Deliberately does NOT judge frame *content* (e.g. rejecting dark
+    frames as "blank"): some virtual webcam drivers - notably Canon EOS
+    Webcam Utility - legitimately show their own placeholder graphic
+    ("connect your camera") for the first few seconds after the app opens
+    the device, before the physical camera is detected and live video
+    takes over. That placeholder is a perfectly valid frame, just like any
+    other webcam's first frame; treating it as an error and tearing down
+    the capture device to "recover" doesn't speed up the driver's own
+    detection and can reset/prolong it. Just show whatever frame arrives,
+    like any other webcam - only a hard read failure is worth reopening.
     """
-    if not ret or frame is None:
-        return True
-    return bool(frame.mean() < _BLANK_FRAME_MEAN_THRESHOLD)
+    return not ret or frame is None
 
 
 def _downscale_for_preview(frame):
@@ -159,7 +160,7 @@ class OpenCVCamera(BaseCamera):
 
     def _reopen(self):
         logger.warning(
-            "Kamera %s liefert wiederholt Schwarzbilder, versuche Neuverbindung",
+            "Kamera %s liefert wiederholt keine Bilder, versuche Neuverbindung",
             self.camera_id,
         )
         self.stop_liveview()
@@ -173,27 +174,30 @@ class OpenCVCamera(BaseCamera):
         self._consecutive_bad_frames = 0
 
     def _read_frame(self):
-        """Read a frame, retrying transient blank reads and auto-reopening the
-        capture device if blank frames persist. Raises CameraError if no
-        usable frame could be obtained."""
+        """Read a frame, retrying transient read failures and auto-reopening
+        the capture device if they persist. Raises CameraError if no frame
+        could be obtained at all. Does not reject frames based on content -
+        a dark/placeholder frame (e.g. Canon EOS Webcam Utility's "connect
+        your camera" graphic before it detects the physical camera) is a
+        valid frame, not a failure."""
         self._ensure_open()
         ret, frame = self.cap.read()
-        if _is_blank(ret, frame):
-            # Transient blanks (e.g. right after opening) often clear up on
-            # an immediate retry, so try a couple more times before counting
-            # this as part of a persistent streak.
+        if _read_failed(ret, frame):
+            # Transient failures (e.g. right after opening) often clear up
+            # on an immediate retry, so try a couple more times before
+            # counting this as part of a persistent streak.
             for _ in range(2):
                 ret, frame = self.cap.read()
-                if not _is_blank(ret, frame):
+                if not _read_failed(ret, frame):
                     break
 
-        if not _is_blank(ret, frame):
+        if not _read_failed(ret, frame):
             self._consecutive_bad_frames = 0
             return frame
 
         self._consecutive_bad_frames += 1
         if self._consecutive_bad_frames == 1:
-            logger.warning("Schwarzbild von Kamera %s erhalten", self.camera_id)
+            logger.warning("Kein Bild von Kamera %s erhalten", self.camera_id)
         now = time.monotonic()
         if (
             self._consecutive_bad_frames >= _MAX_CONSECUTIVE_BAD_FRAMES
@@ -202,7 +206,7 @@ class OpenCVCamera(BaseCamera):
             self._last_reopen_time = now
             self._reopen()
             ret, frame = self.cap.read()
-            if not _is_blank(ret, frame):
+            if not _read_failed(ret, frame):
                 self._consecutive_bad_frames = 0
                 return frame
 
