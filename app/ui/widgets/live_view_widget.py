@@ -1,7 +1,10 @@
 # app/ui/widgets/live_view_widget.py
+import logging
 from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore
 from .overlay import Overlay
+
+logger = logging.getLogger(__name__)
 
 class LiveViewWidget(QtWidgets.QWidget):
     """Widget zur Anzeige des Live-Streams mit einblendbarem Overlay."""
@@ -107,4 +110,10 @@ class LiveViewWidget(QtWidgets.QWidget):
                 )
                 self.label.setPixmap(pix)
         except Exception as e:
-            self.label.setText(str(e))
+            # Some virtual webcam drivers (e.g. Canon EOS Webcam Utility)
+            # take a while to start delivering real frames after launch, so
+            # a friendly "still loading" message reads better than a raw
+            # exception during that window; the actual error still goes to
+            # the log for diagnostics.
+            logger.debug('Live-Vorschau: kein Bild erhalten: %s', e)
+            self.label.setText('Kamera wird geladen, bitte warten …')

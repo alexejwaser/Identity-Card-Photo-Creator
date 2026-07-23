@@ -29,6 +29,9 @@ class FakeCapture:
     def isOpened(self):
         return self._opens
 
+    def set(self, prop, value):
+        return True
+
     def read(self):
         if len(self._reads) > 1:
             return self._reads.pop(0)

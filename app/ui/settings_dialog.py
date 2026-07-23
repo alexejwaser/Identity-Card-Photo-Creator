@@ -86,6 +86,20 @@ class SettingsDialog(QtWidgets.QDialog):
         self.preview_widget.setFixedHeight(200)
         cam_form.addRow('Vorschau', self.preview_widget)
 
+        # Manual override for when the live preview goes black (observed
+        # with some virtual webcam drivers, e.g. Canon EOS Webcam Utility)
+        # and the automatic recovery hasn't kicked in yet. Reopens this
+        # dialog's own preview camera immediately for feedback; closing the
+        # dialog afterwards (OK or Cancel) also forces the main window's
+        # camera to fully reconnect, via reconnect_requested below.
+        self.reconnect_requested = False
+        self.btn_reconnect = QtWidgets.QPushButton('Kamera neu verbinden')
+        self.btn_reconnect.setToolTip(
+            'Kamera trennen und neu initialisieren (z.B. bei schwarzem Live-Bild)'
+        )
+        self.btn_reconnect.clicked.connect(self._reconnect_camera)
+        cam_form.addRow('', self.btn_reconnect)
+
         # Persist camera/resolution settings immediately, without closing
         # the dialog, so an operator can confirm the preview looks right
         # first and the choice survives an app restart right away.
@@ -242,6 +256,10 @@ class SettingsDialog(QtWidgets.QDialog):
         idx = self.cmb_device.findData(getattr(self.settings.kamera, 'deviceIndex', 1))
         self.cmb_device.setCurrentIndex(idx if idx >= 0 else 0)
         self.cmb_device.blockSignals(False)
+        self._restart_preview()
+
+    def _reconnect_camera(self):
+        self.reconnect_requested = True
         self._restart_preview()
 
     def _restart_preview(self):

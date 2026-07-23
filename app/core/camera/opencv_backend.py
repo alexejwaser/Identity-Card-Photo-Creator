@@ -1,5 +1,6 @@
 # app/core/camera/opencv_backend.py
 import sys
+import time
 import logging
 from pathlib import Path
 import cv2
@@ -27,8 +28,20 @@ else:
 # device is fully reopened (mirrors what a PC restart does, but scoped to
 # just this VideoCapture instance).
 _MAX_CONSECUTIVE_BAD_FRAMES = 5
+# Minimum time between reopen attempts. Some virtual webcam drivers (e.g.
+# Canon EOS Webcam Utility) take up to ~30s after launch before delivering
+# real frames; without a cooldown the bad-frame threshold above would be hit
+# every ~0.25s during that window, tearing down and rebuilding the capture
+# graph dozens of times a second for no benefit and adding needless CPU load.
+_REOPEN_COOLDOWN_SECONDS = 5.0
 # A frame whose mean pixel value falls below this is treated as black.
 _BLANK_FRAME_MEAN_THRESHOLD = 2.0
+# Live preview frames are only ever displayed scaled down into a small
+# widget, so downscale before the (comparatively expensive) rotate/color
+# conversion/QImage copy steps rather than doing that work at full sensor
+# resolution every tick. Does not affect capture()/capture_preview(), which
+# keep the full-resolution frame for the saved photo.
+_PREVIEW_MAX_DIM = 960
 
 # Map clockwise-rotation degrees to the corresponding cv2 constant.
 # 270° CW = 90° CCW, which is the correct setting for a Canon EOS M50
@@ -52,6 +65,15 @@ def _is_blank(ret: bool, frame) -> bool:
     return bool(frame.mean() < _BLANK_FRAME_MEAN_THRESHOLD)
 
 
+def _downscale_for_preview(frame):
+    h, w = frame.shape[:2]
+    longest = max(h, w)
+    if longest <= _PREVIEW_MAX_DIM:
+        return frame
+    scale = _PREVIEW_MAX_DIM / longest
+    return cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+
 class OpenCVCamera(BaseCamera):
     def __init__(self, camera_id: int = 0, rotation: int = 0):
         self.camera_id = camera_id
@@ -59,6 +81,7 @@ class OpenCVCamera(BaseCamera):
         self.rotation = rotation  # degrees clockwise (0, 90, 180, 270)
         self.backend_used = None
         self._consecutive_bad_frames = 0
+        self._last_reopen_time = 0.0
 
     def _rotate(self, frame):
         """Rotate *frame* by the configured amount; no-op if rotation is 0."""
@@ -74,6 +97,10 @@ class OpenCVCamera(BaseCamera):
         for backend in _LIVEVIEW_BACKENDS:
             cap = cv2.VideoCapture(self.camera_id, backend)
             if cap.isOpened():
+                # Reduces internal frame buffering (where supported), which
+                # otherwise shows up as visible lag between the live scene
+                # and what the preview displays.
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 self.cap = cap
                 self.backend_used = backend
                 self._consecutive_bad_frames = 0
@@ -132,7 +159,12 @@ class OpenCVCamera(BaseCamera):
         self._consecutive_bad_frames += 1
         if self._consecutive_bad_frames == 1:
             logger.warning("Schwarzbild von Kamera %s erhalten", self.camera_id)
-        if self._consecutive_bad_frames >= _MAX_CONSECUTIVE_BAD_FRAMES:
+        now = time.monotonic()
+        if (
+            self._consecutive_bad_frames >= _MAX_CONSECUTIVE_BAD_FRAMES
+            and now - self._last_reopen_time >= _REOPEN_COOLDOWN_SECONDS
+        ):
+            self._last_reopen_time = now
             self._reopen()
             ret, frame = self.cap.read()
             if not _is_blank(ret, frame):
@@ -151,6 +183,7 @@ class OpenCVCamera(BaseCamera):
 
     def get_preview_qimage(self) -> QtGui.QImage:
         frame = self._read_frame()
+        frame = _downscale_for_preview(frame)
         frame = self._rotate(frame)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape

@@ -114,15 +114,7 @@ class MainWindow(QtWidgets.QMainWindow):
             'background:#d32f2f; color:white; padding:6px; border-radius:4px; font-weight:bold;'
         )
         self.label_camera_banner.setVisible(False)
-        camera_banner_layout = QtWidgets.QHBoxLayout()
-        camera_banner_layout.addWidget(self.label_camera_banner, 1)
-        self.btn_reconnect_camera = QtWidgets.QPushButton('Kamera neu verbinden')
-        self.btn_reconnect_camera.setToolTip(
-            'Kamera trennen und neu initialisieren (z.B. bei schwarzem Live-Bild)'
-        )
-        self.btn_reconnect_camera.clicked.connect(self.reconnect_camera)
-        camera_banner_layout.addWidget(self.btn_reconnect_camera)
-        preview_layout.addLayout(camera_banner_layout)
+        preview_layout.addWidget(self.label_camera_banner)
 
         # Current / next learner labels
         name_layout = QtWidgets.QHBoxLayout()
@@ -404,20 +396,6 @@ class MainWindow(QtWidgets.QMainWindow):
         except OSError:
             pass
 
-    def reconnect_camera(self):
-        """Manually force the camera to be released and reopened. Useful when
-        the live preview goes black (observed with some virtual webcam
-        drivers) but auto-recovery hasn't kicked in yet."""
-        self.preview.timer.stop()
-        try:
-            self.camera = self.controller.restart_camera()
-        except Exception as e:
-            self._notify('Kamera', str(e), level='warning')
-            self.camera = self.controller.camera
-        self.preview.set_camera(self.camera)
-        self._update_camera_banner()
-        self.preview.timer.start()
-
     def _update_camera_banner(self):
         """Show a persistent warning if a real camera failed to open and the
         app is running on the simulator (placeholder photos) as a fallback."""
@@ -460,6 +438,12 @@ class MainWindow(QtWidgets.QMainWindow):
         learner = self.controller.learners[self.controller.current]
         location = self.cmb_location.currentText()
 
+        # Pause the live-preview reads while the background task grabs the
+        # actual capture frame: the same cv2.VideoCapture handle isn't safe
+        # to read from two threads at once, and contention here was a source
+        # of UI stutter during capture.
+        self.preview.timer.stop()
+
         def task():
             return self.controller.capture(learner, location)
 
@@ -476,6 +460,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._capture_finished(None, learner, location, raw_path)
 
     def _capture_finished(self, watcher: QtCore.QFutureWatcher | None, learner: Learner, location: str, raw_path: Path | None):
+        # The capture task (which reads from the camera) has finished by the
+        # time this runs (either synchronously above, or via watcher.result()
+        # below), so it's safe to resume the live preview now.
+        self.preview.timer.start()
         try:
             if watcher is not None:
                 raw_path = watcher.result()
@@ -730,6 +718,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.settings.kamera.backend != before_backend
             or self.settings.kamera.rotation != before_rotation
             or self.settings.kamera.deviceIndex != before_device
+            or getattr(dlg, 'reconnect_requested', False)
         )
         if changed:
             # Delegate full camera restart to the controller so there is
