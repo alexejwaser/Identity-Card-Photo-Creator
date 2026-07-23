@@ -54,7 +54,11 @@ def settings(tmp_path):
 def patched_camera(monkeypatch):
     devices = [CameraDevice(0, "Kamera 0"), CameraDevice(1, "Kamera 1")]
     monkeypatch.setattr(settings_dialog_module, "list_cameras", lambda *a, **kw: devices)
-    monkeypatch.setattr(settings_dialog_module, "OpenCVCamera", FakePreviewCamera)
+    monkeypatch.setattr(
+        settings_dialog_module,
+        "make_webcam_camera",
+        lambda *a, **kw: FakePreviewCamera(*a, **kw),
+    )
     return devices
 
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from pydantic import ValidationError
 import logging
 from ..core.config.settings import Settings, ExcelMapping, CONFIG_PATH
-from ..core.camera import list_cameras, OpenCVCamera
+from ..core.camera import list_cameras, make_webcam_camera
 from .widgets.live_view_widget import LiveViewWidget
 
 
@@ -298,7 +298,7 @@ class SettingsDialog(QtWidgets.QDialog):
             return
         device = self._selected_device()
         try:
-            cam = OpenCVCamera(
+            cam = make_webcam_camera(
                 self.cmb_device.currentData(),
                 rotation=[0, 90, 180, 270][self.cmb_rotation.currentIndex()],
                 device_name=device.name if device else None,

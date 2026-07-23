@@ -31,7 +31,9 @@ def test_transient_open_failure_does_not_switch_or_persist_device(tmp_path, monk
     failed to open this once, the controller should not silently switch to
     a different camera and overwrite the user's chosen device index."""
     settings = _settings(tmp_path, device_index=1)
-    monkeypatch.setattr(controller_mod, "OpenCVCamera", FlakyOpenCVCamera)
+    monkeypatch.setattr(
+        controller_mod, "make_webcam_camera", lambda *a, **kw: FlakyOpenCVCamera(*a, **kw)
+    )
     monkeypatch.setattr(
         controller_mod,
         "list_cameras",
@@ -62,7 +64,9 @@ def test_missing_device_falls_back_to_detected_camera(tmp_path, monkeypatch):
                 raise CameraError("Kamera 1 kann nicht geoeffnet werden")
             opened["index"] = self.camera_id
 
-    monkeypatch.setattr(controller_mod, "OpenCVCamera", WorkingOpenCVCamera)
+    monkeypatch.setattr(
+        controller_mod, "make_webcam_camera", lambda *a, **kw: WorkingOpenCVCamera(*a, **kw)
+    )
     monkeypatch.setattr(
         controller_mod, "list_cameras", lambda: [CameraDevice(0, "Built-in")]
     )

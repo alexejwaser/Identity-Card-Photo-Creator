@@ -39,6 +39,15 @@ jobs:
           $ver = (python -c "from app.version import __version__; print(__version__)").Trim()
           Add-Content -Path $env:GITHUB_ENV -Value "BUILD_TAG=$ver-b$run-$sha"
 
+      - name: Pre-generate comtypes wrappers
+        # Windows camera capture goes through pygrabber/DirectShow, whose import
+        # runs comtypes' GetModule('qedit.dll'/'quartz.dll') to generate wrapper
+        # modules under comtypes.gen. Importing pygrabber here generates them in
+        # the build venv so --collect-all comtypes below can bundle them; without
+        # this the packaged app cannot open the camera (comtypes.gen is empty on
+        # a fresh runner).
+        run: python -c "import pygrabber.dshow_graph"
+
       - name: Build application directory
         # --onedir is faster to start than --onefile because Python does not
         # need to extract itself to %TEMP% on every launch.
@@ -49,6 +58,8 @@ jobs:
             --hidden-import cv2_enumerate_cameras `
             --collect-submodules cv2_enumerate_cameras `
             --hidden-import pygrabber `
+            --collect-submodules pygrabber `
+            --collect-all comtypes `
             --hidden-import app._build_info `
             app\main.py
 

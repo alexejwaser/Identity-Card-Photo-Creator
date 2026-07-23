@@ -1,7 +1,11 @@
 PySide6
 openpyxl
 Pillow
-opencv-python-headless
+# Pinned to the 4.x line: OpenCV 5.0 dropped the Media Foundation backend and
+# is only used here for array ops (colour convert / rotate / resize / imwrite),
+# not capture (Windows capture goes through DirectShow/pygrabber). Pinning keeps
+# cv2 behaviour stable and avoids the unpinned drift onto 5.0.
+opencv-python-headless==4.11.0.86
 pytest
 pytest-qt
 psutil

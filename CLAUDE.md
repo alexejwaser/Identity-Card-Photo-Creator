@@ -1,8 +1,9 @@
 # CLAUDE.md — project & handoff notes
 
-Guidance for Claude Code working in this repo. Read the **Current focus** section
-first — it's an active debugging effort being continued on the Windows PC that
-has the Canon EOS R100.
+Guidance for Claude Code working in this repo. The long-running EOS Webcam
+Utility black-screen bug is **resolved** — see the **RESOLVED** section below for
+the root cause and the DirectShow/pygrabber fix (relevant when touching camera
+capture on Windows).
 
 ## What this app is
 
@@ -21,8 +22,17 @@ German UI and log messages.
 
 ### Architecture (camera-relevant)
 - `app/core/camera/base.py` — `BaseCamera` ABC + `CameraError`.
-- `app/core/camera/opencv_backend.py` — `OpenCVCamera`: opens a device via
-  OpenCV, streams frames. Tries backends in `_LIVEVIEW_BACKENDS`
+- `app/core/camera/__init__.py` — exports the backends and
+  `make_webcam_camera(...)`, the factory the app uses for webcam mode:
+  **`DirectShowCamera` on Windows**, `OpenCVCamera` elsewhere. Use this, not
+  `OpenCVCamera` directly, for the webcam path.
+- `app/core/camera/directshow_backend.py` — `DirectShowCamera`: the Windows
+  capture path (pygrabber/DirectShow). See the **RESOLVED** section for why
+  OpenCV can't capture here. COM confined to one owner thread; frames buffered
+  as BGR; readers just copy the buffer.
+- `app/core/camera/opencv_backend.py` — `OpenCVCamera`: non-Windows / legacy
+  path. Opens a device via OpenCV, streams frames. Tries backends in
+  `_LIVEVIEW_BACKENDS`
   (`[CAP_MSMF, CAP_DSHOW]` on Windows), re-resolving the correct per-backend
   index from the saved device name/path (`resolve_backend_index`). Logs each
   open attempt/failure + first-frame diagnostics (resolution, mean brightness).
@@ -68,88 +78,70 @@ asked. Build with `gh workflow run build-exe.yml --ref camera-config-rewamp`.
 
 ---
 
-## CURRENT FOCUS — EOS Webcam Utility black-screen (unresolved)
+## RESOLVED — EOS Webcam Utility black-screen (fixed via DirectShow/pygrabber)
 
-### Symptom
-Using the app with a **Canon EOS R100** via **EOS Webcam Utility** (a virtual
-webcam) on Windows: the live preview is **black** instead of showing the camera
-feed or the Canon "connect your camera" placeholder. In **MS Teams and other
-apps the placeholder/feed always shows** (even with the camera off), so the
-device itself is fine. The **built-in laptop webcam ("Integrated Camera") works
-perfectly** in this app. This regressed sometime this year (last summer's build
-was fine).
+### Symptom (history)
+With a **Canon EOS R100** via **EOS Webcam Utility** on Windows, the live preview
+was **black** instead of the R100 feed or the Canon placeholder, while MS Teams
+showed it fine and the built-in "Integrated Camera" worked in the app.
 
-### Root cause established (from three on-hardware session logs)
-1. Original bug: enumeration used DirectShow while capture preferred Media
-   Foundation, so the picked index was fed to the wrong backend → wrong/no
-   device. **Fixed**: now enumerate + resolve by stable name/path per backend.
-2. **The remaining blocker:** on the target Windows machine, **OpenCV's Media
-   Foundation (MSMF) backend cannot open ANY camera** — the log shows
-   `Backend MSMF konnte Index N nicht oeffnen` for the EOS (index 0), the
-   built-in camera (index 1), and startup — even with
-   `OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS=0` set. It always falls back to
-   **DirectShow**, and **DirectShow streams pure black for EOS Webcam Utility**
-   (`erstes Bild ... mittlere Helligkeit 0.0`), while the built-in camera via
-   DirectShow reads normally (~160 brightness).
+### Root cause (confirmed on-hardware, from source, this session)
+OpenCV simply **cannot capture on this machine** — both of its Windows backends
+are dead ends here:
+1. **MSMF is a plugin DLL that the pip wheels do not ship.** With
+   `OPENCV_VIDEOIO_DEBUG=1` the log is explicit:
+   `load ...\cv2\opencv_videoio_msmf4110_64.dll => FAILED` →
+   `VIDEOIO(MSMF): backend is not available`. The `cv2/` folder ships only
+   `opencv_videoio_ffmpeg*.dll`; no MSMF plugin in **either** `opencv-python`
+   **or** `-headless`, on 4.11 **or** 5.0. (headless-vs-full differ only in GUI,
+   not video I/O — so "switch to full opencv-python" does NOT help.) OpenCV 5.0
+   additionally has no `Media Foundation` line in `getBuildInformation()` at all.
+2. **OpenCV's DirectShow returns pure-black buffers for EOS Webcam Utility**
+   (all-zero frames; forcing `CAP_PROP_FOURCC` to YUY2/I420/NV12 does not help —
+   verified visually), even though the same DSHOW path reads the built-in camera
+   fine (~150 brightness).
 
-So: MSMF (the path Teams uses, which shows the placeholder) is unavailable in
-this OpenCV build, and DirectShow — the only working backend here — delivers
-black for this particular virtual webcam.
+**pygrabber** builds a DirectShow graph whose SampleGrabber explicitly requests
+**RGB24**, which makes DirectShow insert a colour converter — and that reads real
+frames from EOS Webcam Utility (placeholder *and* live R100 video, correct
+colours) as well as from the built-in camera. pygrabber was already a dependency
+(device enumeration), so this added no new package.
 
-### What's already been tried (don't redo)
-- ✅ Name/path-based device resolution per backend (`resolve_backend_index`).
-- ✅ MSMF preferred in `_LIVEVIEW_BACKENDS`; `cv2_enumerate_cameras` for MSMF
-  enumeration. → MSMF still won't open on the target machine.
-- ✅ `OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS=0` in `app/__init__.py`. → no effect.
-- ✅ Per-attempt + first-frame diagnostic logging (keep it — it's how we confirm).
-- ✅ Rotation-only changes no longer reopen the device (churn reduction).
-- ❌ Reintroducing brightness/black-frame/freeze heuristics — explicitly rejected
-  earlier; do NOT bring these back.
+### The fix (implemented, verified from source with the R100)
+- **`app/core/camera/directshow_backend.py`** — new `DirectShowCamera`
+  (pygrabber). All COM/DirectShow work is confined to one owner thread that
+  builds+runs the graph and continuously re-arms the grabber so the newest frame
+  is copied into a BGR buffer; reader methods (`get_preview_qimage` / `capture`,
+  called from Qt worker threads) just copy that buffer under a lock — no
+  cross-thread COM. Public API mirrors `OpenCVCamera` (rotation, downscale,
+  first-frame diagnostics, bounded capture lock).
+- **`app/core/camera/__init__.py`** — `make_webcam_camera(...)` factory:
+  `DirectShowCamera` on win32, `OpenCVCamera` elsewhere (macOS dev, etc.).
+- **`controller.py`** and **`settings_dialog.py`** now build the webcam via
+  `make_webcam_camera` instead of `OpenCVCamera` directly.
+- **`requirements.txt`** pins `opencv-python-headless==4.11.0.86` (cv2 is now used
+  only for array ops — colour convert / rotate / resize / imwrite — not capture).
+- `OpenCVCamera` is unchanged and still used off-Windows; `enumerate.py`
+  (MSMF-based `list_cameras`) is unchanged — its names match pygrabber's order.
 
-### Next steps to try — ON THE WINDOWS PC, from source, with the R100
-Run from source for fast iteration (`python -m app.main`) and read `logs/`.
-Prioritized hypotheses:
+Verified: `DirectShowCamera` opened from the main thread, `get_preview_qimage`
+read from a worker thread (valid non-black QImages), full-res `capture()` from a
+third thread (real R100 photo saved), and the live feed rendered through the real
+`LiveViewWidget` path — all with correct colours. `pytest tests/` green except the
+same pre-existing failures (10 `MainWindow._init_camera` errors; plus 4
+`test_camera_enumerate.py` cases that fail on any machine with real cameras
+because they don't mock the MSMF enumeration path — confirmed on a clean tree).
 
-1. **Confirm whether MSMF exists in this OpenCV build at all.**
-   ```powershell
-   python -c "import cv2; print(cv2.getBuildInformation())" | Select-String -Pattern "Media Foundation|MSMF|DSHOW|DirectShow"
-   $env:OPENCV_VIDEOIO_DEBUG=1; python -m app.main   # prints backend load attempts
-   ```
-   If "Media Foundation" is NO / the plugin DLL fails to load, MSMF is a dead end
-   in this wheel → go to step 2.
-
-2. **Switch the dependency from `opencv-python-headless` to full `opencv-python`.**
-   `requirements.txt` currently pins `opencv-python-headless`. The full wheel may
-   ship a working MSMF plugin. Swap it, `pip install -r requirements.txt`, retest.
-   (If it fixes MSMF, also update the PyInstaller build.)
-
-3. **Make DirectShow deliver real frames for EOS Webcam Utility (leading fix if
-   MSMF stays dead).** EOS Webcam Utility commonly needs an explicit format on
-   the DSHOW path or it yields black. In `OpenCVCamera.start_liveview`, after a
-   successful DSHOW open, try forcing MJPG and/or the native resolution:
-   ```python
-   cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-   cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-   cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-   ```
-   Experiment with FOURCC (`MJPG`, `YUY2`, `NV12`) and resolutions the EOS
-   Webcam Utility advertises. Watch the logged `mittlere Helligkeit` — nonzero
-   means real content. Note EOS Webcam Utility only outputs the *placeholder*
-   when the camera is off; with the R100 powered on it should output live video.
-
-4. **If OpenCV can't be made to work, capture via Media Foundation directly**
-   (bypass OpenCV for the EOS path) — e.g. a small MF/DirectShow frame-grabber
-   (`pygrabber` can grab DSHOW frames with a chosen format; or a `windows-capture`/
-   MF-based reader). Bigger change; only if 2–3 fail.
-
-### How to verify a fix
-- App bottom-left shows the build version (confirm you're testing the new build).
-- EOS Webcam Utility selected → preview shows live R100 video (camera on) or the
-  Canon placeholder (camera off), not black, promptly (no ~10s black warm-up).
-- Log: EOS open line reports a working backend and `mittlere Helligkeit` > ~5.
-- Built-in "Integrated Camera" still works; switching between them recovers cleanly.
-- `python -m pytest tests/ -q` still green (minus the 10 pre-existing failures).
+### If it regresses / for future work
+- Run from source (`python -m app.main`) and read `logs/`; the EOS open line now
+  logs `Backend DirectShow (pygrabber)` and a first-frame `mittlere Helligkeit`.
+- Do **not** reintroduce brightness/black-frame/freeze heuristics (rejected
+  earlier — the placeholder is a legitimately dark frame).
+- The PyInstaller build already bundled pygrabber/comtypes (used for
+  enumeration), so no build-spec change was needed; if a packaged build ever
+  can't find comtypes-generated modules, add them as PyInstaller hidden imports.
 
 ### Key files for this issue
+`app/core/camera/directshow_backend.py`, `app/core/camera/__init__.py`,
 `app/core/camera/opencv_backend.py`, `app/core/camera/enumerate.py`,
-`app/__init__.py`, `requirements.txt`, `.github/workflows/build-exe.yml`.
+`app/core/controller.py`, `app/ui/settings_dialog.py`, `requirements.txt`.

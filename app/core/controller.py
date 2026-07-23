@@ -6,7 +6,7 @@ import psutil
 from PySide6 import QtCore
 
 from .config.settings import Settings
-from .camera import SimulatorCamera, GPhoto2Camera, OpenCVCamera, list_cameras
+from .camera import SimulatorCamera, GPhoto2Camera, make_webcam_camera, list_cameras
 from .excel.reader import ExcelReader, Learner
 from .excel.missed_writer import MissedWriter, MissedEntry
 from .imaging.processor import process_image
@@ -41,9 +41,10 @@ class MainController:
         elif backend == "simulator":
             cam = SimulatorCamera()
         else:
-            # Default: OpenCV (Webcam-Modus, z.B. Canon EOS M50 per USB)
+            # Default: Webcam-Modus (z.B. Canon EOS M50/R100 per USB). On
+            # Windows this captures via DirectShow/pygrabber; elsewhere OpenCV.
             try:
-                cam = OpenCVCamera(
+                cam = make_webcam_camera(
                     device_index,
                     rotation=rotation,
                     device_name=device_name,
@@ -73,7 +74,7 @@ class MainController:
                 )
                 if fallback is not None:
                     try:
-                        cam = OpenCVCamera(
+                        cam = make_webcam_camera(
                             fallback.index,
                             rotation=rotation,
                             device_name=fallback.name,
