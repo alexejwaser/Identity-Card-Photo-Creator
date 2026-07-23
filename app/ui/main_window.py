@@ -17,7 +17,7 @@ from ..core.imaging.processor import process_image
 from .settings_dialog import SettingsDialog
 from .class_search_dialog import ClassSearchDialog
 from .onboarding_dialog import OnboardingDialog
-from .icons import github_icon
+from .icons import github_icon, icon
 from .widgets import ControlPanel
 
 
@@ -101,12 +101,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cmb_location.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.cmb_class.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.cmb_class.setMaxVisibleItems(25)
-        search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
-        self.btn_search_class.setIcon(search_icon)
+        # Consistent lucide.dev iconography on the major buttons, placed to the
+        # left of each label. Icon-only buttons (search, settings) keep their
+        # tooltips for discoverability.
+        _icon_px = QtCore.QSize(16, 16)
+        for btn, name in (
+            (self.btn_excel, 'file-spreadsheet'),
+            (self.btn_capture, 'camera'),
+            (self.btn_skip, 'skip-forward'),
+            (self.btn_add_person, 'user-plus'),
+            (self.btn_finish, 'check'),
+            (self.btn_settings, 'settings'),
+            (self.btn_search_class, 'search'),
+        ):
+            btn.setIcon(icon(name))
+            btn.setIconSize(_icon_px)
         self.btn_search_class.setToolTip('Klasse suchen')
-        icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogDetailedView)
-        self.btn_settings.setIcon(icon)
         self.btn_settings.setToolTip('Einstellungen')
+        # QToolButton carries a label, so show the icon beside the text.
+        self.btn_jump_to.setIcon(icon('users'))
+        self.btn_jump_to.setIconSize(_icon_px)
+        self.btn_jump_to.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
 
         self.btn_help = QtWidgets.QPushButton('?')
         self.btn_help.setFixedWidth(28)
