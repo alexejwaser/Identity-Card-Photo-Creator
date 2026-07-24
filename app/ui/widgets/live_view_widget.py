@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from PySide6 import QtWidgets, QtGui, QtCore, QtConcurrent
 from .overlay import Overlay
@@ -10,6 +11,18 @@ logger = logging.getLogger(__name__)
 
 class LiveViewWidget(QtWidgets.QWidget):
     """Widget zur Anzeige des Live-Streams mit einblendbarem Overlay."""
+
+    # Emitted when the preview has shown the "Kamera wird geladen …" state
+    # continuously for longer than _RECOVERY_AFTER_S — the camera looks wedged
+    # (e.g. the device is still held by a just-closed instance after a quick
+    # close+reopen). The window responds by restarting the camera.
+    recovery_requested = QtCore.Signal()
+    # Emitted on the first good frame after such an error episode, so the window
+    # can reset its retry budget.
+    recovered = QtCore.Signal()
+
+    # How long the "loading" state must persist before auto-recovery kicks in.
+    _RECOVERY_AFTER_S = 4.0
 
     def __init__(self, camera, fps: int = 20, parent=None):
         super().__init__(parent)
@@ -33,6 +46,12 @@ class LiveViewWidget(QtWidgets.QWidget):
         self.overlay.show()
         self._inflight = False
         self._watcher: QtCore.QFutureWatcher | None = None
+        # Auto-recovery state: timestamp of the last good frame, whether we are
+        # currently in the "loading" error state, and whether a recovery has
+        # already been requested for the current episode (so we ask only once).
+        self._last_good_ts = time.monotonic()
+        self._in_error = False
+        self._recovery_pending = False
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.update_frame)
         self.timer.start(max(30, int(1000 / max(1, fps))))
@@ -64,6 +83,10 @@ class LiveViewWidget(QtWidgets.QWidget):
 
     def set_camera(self, camera):
         self.camera = camera
+        # A (possibly just-restarted) camera gets a fresh window before we
+        # consider it wedged again, and any pending recovery is cleared.
+        self._last_good_ts = time.monotonic()
+        self._recovery_pending = False
 
     def set_overlay_image(self, path: str | Path | None):
         self.overlay.set_image(path)
@@ -149,6 +172,13 @@ class LiveViewWidget(QtWidgets.QWidget):
     def _display_frame(self, img: QtGui.QImage):
         if img is None or img.isNull():
             return
+        # A real frame arrived: reset the recovery window and, if we were in the
+        # "loading" state, tell the window the camera is back.
+        self._last_good_ts = time.monotonic()
+        self._recovery_pending = False
+        if self._in_error:
+            self._in_error = False
+            self.recovered.emit()
         img = self._crop_to_aspect(img)
         self.frame_ratio = img.width() / img.height()
         self._update_label_geometry()
@@ -166,3 +196,13 @@ class LiveViewWidget(QtWidgets.QWidget):
         # that window; the actual error still goes to the log for diagnostics.
         logger.debug('Live-Vorschau: kein Bild erhalten: %s', e)
         self.label.setText('Kamera wird geladen, bitte warten …')
+        self._in_error = True
+        # If the stream has been stuck on this message for a while, the device
+        # is most likely still held by a just-closed instance; ask the window to
+        # restart the camera (once per episode) to unblock it.
+        if (
+            not self._recovery_pending
+            and time.monotonic() - self._last_good_ts >= self._RECOVERY_AFTER_S
+        ):
+            self._recovery_pending = True
+            self.recovery_requested.emit()
