@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from app.core.util.logging import setup_logging
 from app.core.controller import MainController
 from app.ui.main_window import MainWindow
+from app.ui.theme import apply_dark_theme
 
 
 def main() -> int:
@@ -22,7 +23,7 @@ def main() -> int:
         return 1
 
     app = QtWidgets.QApplication(sys.argv)
-    app.setStyle("Fusion")
+    apply_dark_theme(app)
     app.setFont(QtGui.QFont("Segoe UI", 10))
     controller = MainController(settings)
     win = MainWindow(settings, controller, logger=logger.getChild('MainWindow'))
