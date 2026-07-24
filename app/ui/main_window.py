@@ -6,6 +6,7 @@ from PySide6 import QtWidgets, QtGui, QtCore, QtConcurrent
 from pathlib import Path
 from datetime import datetime
 import logging
+import os
 import psutil
 
 from ..core.config.settings import Settings, CONFIG_DIR
@@ -107,6 +108,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cmb_location.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.cmb_class.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.cmb_class.setMaxVisibleItems(25)
+        # No class is preselected when a roster loads; the operator picks one
+        # actively. With currentIndex == -1 this placeholder shows and
+        # currentText() returns '' (so the existing "no class" guards hold).
+        self.cmb_class.setPlaceholderText('Wähle die Klasse')
         # Consistent lucide.dev iconography on the major buttons. Text buttons
         # get a wider (padded) icon so the label sits clear of the glyph, and are
         # left-aligned via the #controlPanel stylesheet below; icon-only buttons
@@ -294,7 +299,12 @@ class MainWindow(QtWidgets.QMainWindow):
         msg_fn(self, title, message)
 
     def load_excel(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'Excel auswählen', filter='Excel (*.xlsx)')
+        # Start the dialog in the folder of the last opened Excel file (remembered
+        # across restarts) instead of the app's install/working directory.
+        start_dir = self.settings.lastExcelDir if os.path.isdir(self.settings.lastExcelDir) else ''
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, 'Excel auswählen', start_dir, filter='Excel (*.xlsx)'
+        )
         if not path:
             return
         # Confirm before opening, so an accidental pick in the file dialog does
@@ -308,22 +318,28 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         if reply != QtWidgets.QMessageBox.Yes:
             return
-        self._load_excel_from_path(Path(path))
+        if self._load_excel_from_path(Path(path)):
+            # Remember the folder for next time (persist so it survives restarts).
+            self.settings.lastExcelDir = str(Path(path).resolve().parent)
+            try:
+                self.settings.save()
+            except Exception as e:
+                self.logger.warning('Konnte lastExcelDir nicht speichern: %s', e)
 
-    def _load_excel_from_path(self, path: Path):
+    def _load_excel_from_path(self, path: Path) -> bool:
         """Point self.reader at *path* and populate the location dropdown.
-
-        Shared by the file-picker flow (load_excel) and the test-mode flow
-        (_activate_test_mode)."""
+        Returns True on success. Shared by the file-picker flow (load_excel) and
+        the test-mode flow (_activate_test_mode)."""
         try:
             self.reader = ExcelReader(path, self.settings.excelMapping.model_dump())
             locations = self.reader.locations()
         except Exception as e:
             self._notify('Excel', str(e), level='error')
-            return
+            return False
         self.controls.cmb_location.clear()
         self.controls.cmb_location.addItems(locations)
         self._update_buttons()
+        return True
 
     def _activate_test_mode(self):
         """Generate a fresh randomized placeholder roster, load it as the active
@@ -348,8 +364,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def update_classes(self, location: str):
         classes = self.controller.classes_for_location(location)
-        self.controls.cmb_class.clear()
-        self.controls.cmb_class.addItems(classes)
+        combo = self.controls.cmb_class
+        # Populate without auto-selecting the first class: block signals so
+        # addItems() doesn't fire load_learners for item 0, then clear the
+        # selection so the "Wähle die Klasse" placeholder shows instead.
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(classes)
+        combo.setCurrentIndex(-1)
+        combo.blockSignals(False)
         self._update_buttons()
 
     def search_class(self):

@@ -89,6 +89,7 @@ DEFAULTS = {
     },
     'zip': {'maxAnzahl': None, 'maxGroesseMB': None},
     'copyright': {'artist': '', 'copyright': ''},
+    'lastExcelDir': '',
     'excelMapping': {
         'klasse': 'A',
         'nachname': 'B',
@@ -197,6 +198,9 @@ class Settings(BaseModel):
     zip: ZipSettings = Field(default_factory=ZipSettings)
     copyright: CopyrightSettings = Field(default_factory=CopyrightSettings)
     excelMapping: ExcelMapping = Field(default_factory=ExcelMapping)
+    # Ordner der zuletzt geöffneten Excel-Datei, damit der Datei-Dialog beim
+    # nächsten Mal (auch nach einem Neustart) dort startet statt im App-Ordner.
+    lastExcelDir: str = ''
 
     @classmethod
     def load(cls, path: Path = CONFIG_PATH) -> 'Settings':
