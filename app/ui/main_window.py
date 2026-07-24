@@ -41,6 +41,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._reader = None
         self.busy = False
         self._jump_return = None
+        # Automatic camera recovery (see _auto_recover_camera): a re-entrancy
+        # guard and a bounded retry budget so a genuinely absent camera does
+        # not restart in an endless loop.
+        self._camera_recovering = False
+        self._auto_recover_attempts = 0
         self._setup_ui()
         if hasattr(self.camera, "start_liveview"):
             self.camera.start_liveview()
@@ -166,6 +171,8 @@ class MainWindow(QtWidgets.QMainWindow):
         from .widgets.live_view_widget import LiveViewWidget
         fps = self.settings.kamera.liveviewFpsZiel
         self.preview = LiveViewWidget(self.camera, fps)
+        self.preview.recovery_requested.connect(self._auto_recover_camera)
+        self.preview.recovered.connect(self._on_camera_recovered)
         self.preview.set_overlay_image(self.settings.overlay.image)
         self.preview.set_crop_aspect((self.settings.bild.breite, self.settings.bild.hoehe))
         preview_layout = QtWidgets.QVBoxLayout()
@@ -499,6 +506,53 @@ class MainWindow(QtWidgets.QMainWindow):
                 + (f' ({reason})' if reason else '')
             )
         self.label_camera_banner.setVisible(fallback)
+
+    # Stop auto-recovering after this many consecutive attempts without frames,
+    # so a genuinely missing camera does not restart forever.
+    _MAX_AUTO_RECOVER_ATTEMPTS = 6
+
+    def _auto_recover_camera(self):
+        """Restart the camera when the live preview has been stuck on
+        "Kamera wird geladen …" for a few seconds.
+
+        This happens when the camera device is still held by a just-closed
+        instance of the app (a quick close+reopen, or a second instance running
+        at once): the stream never starts. Restarting the camera — exactly what
+        closing the settings dialog does — reliably unblocks it once the device
+        is free again. Retries are bounded so a genuinely absent camera does not
+        loop forever; the budget is reset once frames resume
+        (``_on_camera_recovered``)."""
+        if self._camera_recovering:
+            return
+        if getattr(self.settings.kamera, 'backend', 'opencv') == 'simulator':
+            return  # simulator always delivers frames; nothing to recover
+        if self._auto_recover_attempts >= self._MAX_AUTO_RECOVER_ATTEMPTS:
+            return
+        self._camera_recovering = True
+        self._auto_recover_attempts += 1
+        self.logger.info(
+            'Kamera-Vorschau haengt — automatischer Neustart der Kamera '
+            '(Versuch %s/%s)',
+            self._auto_recover_attempts,
+            self._MAX_AUTO_RECOVER_ATTEMPTS,
+        )
+        # Pause the preview reads while the camera is torn down and rebuilt, the
+        # same way the settings dialog does around a restart.
+        self.preview.timer.stop()
+        try:
+            self.camera = self.controller.restart_camera()
+        except Exception as e:
+            self.logger.warning('Automatischer Kamera-Neustart fehlgeschlagen: %s', e)
+            self.camera = self.controller.camera
+        self.preview.set_camera(self.camera)
+        self._update_camera_banner()
+        self.preview.timer.start()
+        self._camera_recovering = False
+
+    def _on_camera_recovered(self):
+        """Frames are flowing again — reset the retry budget so a future stall
+        gets the full set of automatic attempts."""
+        self._auto_recover_attempts = 0
 
     def _excel_running(self) -> bool:
         for proc in psutil.process_iter(['name']):
