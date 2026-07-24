@@ -4,58 +4,111 @@
  <widget class="QWidget" name="ControlPanel">
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <widget class="QPushButton" name="btn_excel">
-     <property name="text">
-      <string>Excel verbinden...</string>
+    <widget class="QGroupBox" name="grp_datenbank">
+     <property name="title">
+      <string>Datenbank</string>
      </property>
+     <layout class="QVBoxLayout" name="datenbankLayout">
+      <item>
+       <widget class="QPushButton" name="btn_excel">
+        <property name="text">
+         <string>Excel verbinden...</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="cmb_location"/>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="classLayout">
+        <item>
+         <widget class="QComboBox" name="cmb_class"/>
+        </item>
+        <item>
+         <widget class="QToolButton" name="btn_search_class">
+          <property name="toolTip">
+           <string>Klasse suchen</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
     </widget>
    </item>
    <item>
-    <widget class="QComboBox" name="cmb_location"/>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="classLayout">
-     <item>
-      <widget class="QComboBox" name="cmb_class"/>
-     </item>
-     <item>
-      <widget class="QToolButton" name="btn_search_class">
-       <property name="toolTip">
-        <string>Klasse suchen</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <widget class="QPushButton" name="btn_capture">
-     <property name="text">
-      <string>Foto aufnehmen</string>
+    <widget class="QGroupBox" name="grp_foto">
+     <property name="title">
+      <string>Fotografieren</string>
      </property>
-     <property name="toolTip">
-      <string>Leertaste</string>
-     </property>
+     <layout class="QVBoxLayout" name="fotoLayout">
+      <item>
+       <widget class="QPushButton" name="btn_capture">
+        <property name="text">
+         <string>Foto aufnehmen</string>
+        </property>
+        <property name="toolTip">
+         <string>Leertaste</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
    </item>
    <item>
-    <widget class="QPushButton" name="btn_skip">
-     <property name="text">
-      <string>Überspringen</string>
+    <widget class="QGroupBox" name="grp_einzel">
+     <property name="title">
+      <string>Einzelfälle</string>
      </property>
-     <property name="toolTip">
-      <string>S</string>
-     </property>
+     <layout class="QVBoxLayout" name="einzelLayout">
+      <item>
+       <widget class="QPushButton" name="btn_skip">
+        <property name="text">
+         <string>Überspringen</string>
+        </property>
+        <property name="toolTip">
+         <string>S</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_add_person">
+        <property name="text">
+         <string>Person hinzufügen</string>
+        </property>
+        <property name="toolTip">
+         <string>A</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QToolButton" name="btn_jump_to">
+        <property name="text">
+         <string>Zu spezifischer Person springen</string>
+        </property>
+        <property name="toolTip">
+         <string>Direkt zu einer bestimmten Person springen</string>
+        </property>
+        <property name="popupMode">
+         <enum>QToolButton::InstantPopup</enum>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
    </item>
    <item>
-    <widget class="QPushButton" name="btn_add_person">
-     <property name="text">
-      <string>Person hinzufügen</string>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
      </property>
-     <property name="toolTip">
-      <string>A</string>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
      </property>
-    </widget>
+    </spacer>
    </item>
    <item>
     <widget class="QPushButton" name="btn_finish">
@@ -76,32 +129,6 @@
       <string>Einstellungen</string>
      </property>
     </widget>
-   </item>
-   <item>
-    <widget class="QToolButton" name="btn_jump_to">
-     <property name="text">
-      <string>Person wählen</string>
-     </property>
-     <property name="toolTip">
-      <string>Direkt zu einer bestimmten Person springen</string>
-     </property>
-     <property name="popupMode">
-      <enum>QToolButton::InstantPopup</enum>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
    </item>
   </layout>
  </widget>

@@ -124,15 +124,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_settings.setIcon(icon('settings'))
         self.btn_settings.setIconSize(square_size)
         self.btn_settings.setToolTip('Einstellungen')
-        # QToolButton carries a label, so show the icon beside the text.
+        # QToolButton carries a label, so show the icon beside the text and let
+        # it stretch to the group width like the neighbouring push buttons.
         self.btn_jump_to.setIcon(icon('users'))
         self.btn_jump_to.setIconSize(padded_size)
         self.btn_jump_to.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.btn_jump_to.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
 
         # Help + settings share a compact row at the bottom of the left column.
         # The settings button is detached from the control stack and moved here,
         # to the right of the help button.
         self.btn_help = QtWidgets.QPushButton('?')
+        self.btn_help.setObjectName('btn_help')
         self.btn_help.setFixedWidth(32)
         self.btn_help.setToolTip('Kurzanleitung anzeigen')
         self.btn_help.clicked.connect(self.show_onboarding)
@@ -151,6 +156,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_add_person.setToolTip('A')
         self.btn_finish.setToolTip('F')
 
+        # Keep the control column a tidy fixed-width sidebar; the preview takes
+        # the remaining space.
+        self.controls.setMaximumWidth(320)
+        self.controls.setMinimumWidth(260)
         layout.addWidget(self.controls)
 
         # right preview
@@ -215,15 +224,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_shortcuts.setAlignment(QtCore.Qt.AlignCenter)
         preview_layout.addWidget(self.label_shortcuts)
 
-        layout.addLayout(preview_layout)
+        layout.addLayout(preview_layout, stretch=1)
 
         self.setStyleSheet(
             "* {font-family: 'Segoe UI';}"
             " QPushButton {padding:6px 12px;}"
-            # Left-align the main action buttons so the icon sits at the left
-            # edge and the label reads left-to-right (scoped to the control
-            # panel so dialog OK/Cancel buttons stay centered).
-            " #controlPanel QPushButton {text-align:left; padding:7px 12px;}"
+            # Left-align the main action buttons (group buttons + Fertig) so the
+            # icon sits at the left edge and the label reads left-to-right. The
+            # small help/settings buttons and dialog buttons are unaffected.
+            " #controlPanel QGroupBox QPushButton,"
+            " #controlPanel QGroupBox QToolButton,"
+            " QPushButton#btn_finish {text-align:left; padding:7px 12px;}"
+            # Keep the compact icon buttons small (they are icon-only / tiny).
+            " QToolButton#btn_search_class, QPushButton#btn_help,"
+            " QPushButton#btn_settings {text-align:center; padding:4px;}"
+            # Group the sidebar controls into labelled category cards.
+            " QGroupBox {border:1px solid #45474d; border-radius:6px;"
+            " margin-top:12px; padding:8px 8px 4px 8px; font-weight:600;}"
+            " QGroupBox::title {subcontrol-origin:margin; left:10px;"
+            " padding:0 4px; color:#9aa0a6;}"
             " QLabel{font-size:14px;}"
         )
 
