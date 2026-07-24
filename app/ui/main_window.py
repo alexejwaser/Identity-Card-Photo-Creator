@@ -17,7 +17,7 @@ from ..core.imaging.processor import process_image
 from .settings_dialog import SettingsDialog
 from .class_search_dialog import ClassSearchDialog
 from .onboarding_dialog import OnboardingDialog
-from .icons import github_icon, icon
+from .icons import github_icon, icon, PADDED_ASPECT
 from .widgets import ControlPanel
 
 
@@ -98,36 +98,57 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_finish = self.controls.btn_finish
         self.btn_settings = self.controls.btn_settings
         self.btn_jump_to = self.controls.btn_jump_to
+        self.controls.setObjectName('controlPanel')  # scopes the left-align QSS
         self.cmb_location.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.cmb_class.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.cmb_class.setMaxVisibleItems(25)
-        # Consistent lucide.dev iconography on the major buttons, placed to the
-        # left of each label. Icon-only buttons (search, settings) keep their
-        # tooltips for discoverability.
-        _icon_px = QtCore.QSize(16, 16)
+        # Consistent lucide.dev iconography on the major buttons. Text buttons
+        # get a wider (padded) icon so the label sits clear of the glyph, and are
+        # left-aligned via the #controlPanel stylesheet below; icon-only buttons
+        # (search, settings) use a square icon and keep their tooltips.
+        h = 16
+        padded_size = QtCore.QSize(round(h * PADDED_ASPECT), h)
+        square_size = QtCore.QSize(h, h)
         for btn, name in (
             (self.btn_excel, 'file-spreadsheet'),
             (self.btn_capture, 'camera'),
             (self.btn_skip, 'skip-forward'),
             (self.btn_add_person, 'user-plus'),
             (self.btn_finish, 'check'),
-            (self.btn_settings, 'settings'),
-            (self.btn_search_class, 'search'),
         ):
             btn.setIcon(icon(name))
-            btn.setIconSize(_icon_px)
+            btn.setIconSize(padded_size)
+        self.btn_search_class.setIcon(icon('search'))
+        self.btn_search_class.setIconSize(square_size)
         self.btn_search_class.setToolTip('Klasse suchen')
+        self.btn_settings.setIcon(icon('settings'))
+        self.btn_settings.setIconSize(square_size)
         self.btn_settings.setToolTip('Einstellungen')
-        # QToolButton carries a label, so show the icon beside the text.
+        # QToolButton carries a label, so show the icon beside the text and let
+        # it stretch to the group width like the neighbouring push buttons.
         self.btn_jump_to.setIcon(icon('users'))
-        self.btn_jump_to.setIconSize(_icon_px)
+        self.btn_jump_to.setIconSize(padded_size)
         self.btn_jump_to.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.btn_jump_to.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
 
+        # Help + settings share a compact row at the bottom of the left column.
+        # The settings button is detached from the control stack and moved here,
+        # to the right of the help button.
         self.btn_help = QtWidgets.QPushButton('?')
-        self.btn_help.setFixedWidth(28)
+        self.btn_help.setObjectName('btn_help')
+        self.btn_help.setFixedWidth(32)
         self.btn_help.setToolTip('Kurzanleitung anzeigen')
         self.btn_help.clicked.connect(self.show_onboarding)
-        self.controls.layout().addWidget(self.btn_help)
+        self.btn_settings.setParent(None)
+        self.btn_settings.setFixedWidth(40)
+        bottom_row = QtWidgets.QHBoxLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.addWidget(self.btn_help)
+        bottom_row.addWidget(self.btn_settings)
+        bottom_row.addStretch()
+        self.controls.layout().addLayout(bottom_row)
 
         # Tooltips for keyboard shortcuts (cleaner than baking them into labels)
         self.btn_capture.setToolTip('Leertaste')
@@ -135,6 +156,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_add_person.setToolTip('A')
         self.btn_finish.setToolTip('F')
 
+        # Keep the control column a tidy fixed-width sidebar; the preview takes
+        # the remaining space.
+        self.controls.setMaximumWidth(320)
+        self.controls.setMinimumWidth(260)
         layout.addWidget(self.controls)
 
         # right preview
@@ -199,10 +224,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_shortcuts.setAlignment(QtCore.Qt.AlignCenter)
         preview_layout.addWidget(self.label_shortcuts)
 
-        layout.addLayout(preview_layout)
+        layout.addLayout(preview_layout, stretch=1)
 
         self.setStyleSheet(
-            "* {font-family: 'Segoe UI';} QPushButton {padding:6px 12px;}\nQLabel{font-size:14px;}"
+            "* {font-family: 'Segoe UI';}"
+            " QPushButton {padding:6px 12px;}"
+            # Left-align the main action buttons (group buttons + Fertig) so the
+            # icon sits at the left edge and the label reads left-to-right. The
+            # small help/settings buttons and dialog buttons are unaffected.
+            " #controlPanel QGroupBox QPushButton,"
+            " #controlPanel QGroupBox QToolButton,"
+            " QPushButton#btn_finish {text-align:left; padding:7px 12px;}"
+            # Keep the compact icon buttons small (they are icon-only / tiny).
+            " QToolButton#btn_search_class, QPushButton#btn_help,"
+            " QPushButton#btn_settings {text-align:center; padding:4px;}"
+            # Group the sidebar controls into labelled category cards.
+            " QGroupBox {border:1px solid #45474d; border-radius:6px;"
+            " margin-top:12px; padding:8px 8px 4px 8px; font-weight:600;}"
+            " QGroupBox::title {subcontrol-origin:margin; left:10px;"
+            " padding:0 4px; color:#9aa0a6;}"
+            " QLabel{font-size:14px;}"
         )
 
         self.btn_excel.clicked.connect(self.load_excel)

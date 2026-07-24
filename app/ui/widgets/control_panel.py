@@ -14,6 +14,12 @@ class ControlPanel(QtWidgets.QWidget):
             ui_file.open(QtCore.QFile.ReadOnly)
             loaded = loader.load(ui_file, self)
             ui_file.close()
+            # Fill the column vertically so the internal spacer can push the
+            # "Fertig" button to the bottom and leave room for the help/settings
+            # row that MainWindow adds beneath this widget.
+            loaded.setSizePolicy(
+                QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding
+            )
             layout = QtWidgets.QVBoxLayout(self)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(loaded)
@@ -40,7 +46,7 @@ class ControlPanel(QtWidgets.QWidget):
             self.btn_finish = QtWidgets.QPushButton('Fertig')
             self.btn_settings = QtWidgets.QPushButton('')
             self.btn_jump_to = QtWidgets.QToolButton()
-            self.btn_jump_to.setText('Person wählen')
+            self.btn_jump_to.setText('Zu spezifischer Person springen')
             self.btn_jump_to.setPopupMode(QtWidgets.QToolButton.InstantPopup)
             for w in [
                 self.btn_excel,
