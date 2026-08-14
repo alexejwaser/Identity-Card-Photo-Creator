@@ -406,23 +406,32 @@ class MainWindow(QtWidgets.QMainWindow):
 
         Läuft immer auf dem GUI-Thread (aus show_next() oder dem 1-Hz-Timer);
         der Server serialisiert intern gegen seine Handler-Threads.
+
+        Fehler werden hier geloggt statt im Qt-Slot zu verpuffen: bliebe eine
+        Ausnahme unsichtbar, stünde die Anzeige draussen still, ohne dass
+        irgendwo eine Spur davon landet.
         """
         if not self._display_server.running:
             return
         anzeige = self.settings.anzeige
-        self._display_server.publish(
-            build_snapshot(
-                learners=self.controller.learners,
-                current=self.controller.current,
-                jump_return=getattr(self, '_jump_return', None),
-                klasse=self.cmb_class.currentText(),
-                standort=self.cmb_location.currentText(),
-                has_roster=self.controller.reader is not None,
-                class_finished=self._class_finished,
-                count=anzeige.anzahlNaechste,
-                full_names=anzeige.vollstaendigeNamen,
+        try:
+            self._display_server.publish(
+                build_snapshot(
+                    learners=self.controller.learners,
+                    current=self.controller.current,
+                    jump_return=getattr(self, '_jump_return', None),
+                    klasse=self.cmb_class.currentText(),
+                    standort=self.cmb_location.currentText(),
+                    has_roster=self.controller.reader is not None,
+                    class_finished=self._class_finished,
+                    count=anzeige.anzahlNaechste,
+                    full_names=anzeige.vollstaendigeNamen,
+                    hints=anzeige.hinweise,
+                    hint_interval=anzeige.hinweisIntervallSekunden,
+                )
             )
-        )
+        except Exception:
+            self.logger.exception('Anzeige-Zustand konnte nicht veröffentlicht werden')
 
     def load_excel(self):
         # Start the dialog in the folder of the last opened Excel file (remembered

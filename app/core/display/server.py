@@ -13,8 +13,11 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import socket
+import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
 
@@ -35,6 +38,15 @@ _POLL_INTERVAL_SECONDS = 0.1
 # Pakete gesendet - ``connect`` auf einem UDP-Socket waehlt nur die Route.
 _ROUTE_PROBE_TARGET = ("203.0.113.1", 9)  # TEST-NET-3, garantiert nicht geroutet
 
+# Eine tote Keep-alive-Verbindung darf ihren Handler-Thread nicht ewig in
+# readline() blockieren; nach dieser Frist wird sie abgeraeumt.
+_CONNECTION_TIMEOUT_SECONDS = 30.0
+
+# Ab diesem Alter der ausgelieferten Daten wird eine Warnung geloggt. Damit steht
+# beim naechsten Einfrieren eine Zeile mit Zeitstempel in logs/app.log, statt dass
+# man auf Vermutungen angewiesen ist.
+_STALE_WARN_SECONDS = 15.0
+
 _IDLE_SNAPSHOT: Dict[str, Any] = {
     "state": "idle",
     "current": None,
@@ -43,6 +55,8 @@ _IDLE_SNAPSHOT: Dict[str, Any] = {
     "standort": "",
     "done": 0,
     "total": 0,
+    "hints": [],
+    "hint_interval": 10,
 }
 
 
@@ -79,6 +93,9 @@ def local_addresses() -> List[str]:
 
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # Greift auf die Verbindung: ein halb weggebrochener Browser haelt sonst
+    # seinen Handler-Thread unbegrenzt fest.
+    timeout = _CONNECTION_TIMEOUT_SECONDS
     server: "_Server"  # type: ignore[assignment]
 
     def do_GET(self):  # noqa: N802 - von BaseHTTPRequestHandler vorgegeben
@@ -86,7 +103,15 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/":
             self._respond(200, "text/html; charset=utf-8", render_page())
         elif path == "/api/state":
-            body = json.dumps(self.server.snapshot(), ensure_ascii=False).encode("utf-8")
+            snapshot = self.server.snapshot()
+            age = snapshot.get("age_seconds", 0)
+            if age >= _STALE_WARN_SECONDS:
+                logger.warning(
+                    "Anzeige-Server liefert Daten, die %.0f s alt sind - die App "
+                    "veroeffentlicht nichts mehr",
+                    age,
+                )
+            body = json.dumps(snapshot, ensure_ascii=False).encode("utf-8")
             self._respond(200, "application/json; charset=utf-8", body)
         else:
             self._respond(404, "text/plain; charset=utf-8", b"Nicht gefunden")
@@ -107,16 +132,34 @@ class _Handler(BaseHTTPRequestHandler):
 
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    # Unter Windows erlaubt SO_REUSEADDR - anders als unter Linux - dass sich ein
+    # *zweiter* Prozess auf denselben Port bindet; wer die Verbindungen bekommt,
+    # ist undefiniert. Eine uebriggebliebene aeltere Instanz kann so eine
+    # eingefrorene Momentaufnahme ausliefern, waehrend die neue App munter
+    # weiterpubliziert. Deshalb dort aus: ein belegter Port soll laut scheitern.
+    allow_reuse_address = sys.platform != "win32"
+
+    # Felder, die der Server selbst beisteuert; sie duerfen den Inhaltsvergleich
+    # in publish() nicht beeinflussen, sonst aendert sich rev bei jedem Tick.
+    _META_KEYS = ("rev", "instance", "age_seconds")
 
     def __init__(self, address):
         super().__init__(address, _Handler)
         self._lock = threading.Lock()
         self._snapshot: Dict[str, Any] = dict(_IDLE_SNAPSHOT, rev=0)
+        # Wechselt bei jedem Serverstart. Sieht die Seite eine neue Kennung, laedt
+        # sie sich selbst neu - das heilt "App neu gestartet, Browser haengt noch
+        # am alten Stand" ohne Handgriff am Geraet draussen.
+        self.instance = secrets.token_hex(4)
+        self._published_at = time.monotonic()
 
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
-            return dict(self._snapshot)
+            data = dict(self._snapshot)
+            age = time.monotonic() - self._published_at
+        data["instance"] = self.instance
+        data["age_seconds"] = round(age, 1)
+        return data
 
     def publish(self, snapshot: Dict[str, Any]) -> bool:
         """Uebernimmt *snapshot*; zaehlt ``rev`` nur bei inhaltlicher Aenderung hoch.
@@ -124,9 +167,17 @@ class _Server(ThreadingHTTPServer):
         Das ist der Grund, weshalb ein verworfenes und neu aufgenommenes Foto die
         Anzeige nicht flackern laesst: der Zustand ist danach derselbe, also
         bleibt ``rev`` gleich und die Seite rendert nicht neu.
+
+        Der Zeitstempel wird dagegen **immer** aufgefrischt - er ist der Herzschlag,
+        an dem die Seite erkennt, ob die App noch veroeffentlicht. Ohne ihn koennte
+        eine eingefrorene Anzeige draussen stumm falsche Namen aufrufen.
         """
+        now = time.monotonic()
         with self._lock:
-            previous = {k: v for k, v in self._snapshot.items() if k != "rev"}
+            self._published_at = now
+            previous = {
+                k: v for k, v in self._snapshot.items() if k not in self._META_KEYS
+            }
             if previous == snapshot:
                 return False
             self._snapshot = dict(snapshot, rev=self._snapshot["rev"] + 1)
@@ -199,7 +250,7 @@ class DisplayServer:
 
     def snapshot(self) -> Dict[str, Any]:
         if self._server is None:
-            return dict(_IDLE_SNAPSHOT, rev=0)
+            return dict(_IDLE_SNAPSHOT, rev=0, instance="", age_seconds=0.0)
         return self._server.snapshot()
 
     # display helpers --------------------------------------------------------

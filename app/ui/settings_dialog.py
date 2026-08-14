@@ -240,10 +240,31 @@ class SettingsDialog(QtWidgets.QDialog):
                 self._mapping_widgets[key] = ed
                 form.addRow(label, ed)
 
-        # ---- Wartezimmer-Anzeige -------------------------------------
-        anzeige_group = QtWidgets.QGroupBox('Anzeige (zweiter Bildschirm)')
-        anzeige_form = QtWidgets.QFormLayout(anzeige_group)
-        outer.addWidget(anzeige_group)
+        # ---- Wartezimmer-Anzeige (aufklappbar) -----------------------
+        # Zugeklappt, weil diese Einstellungen selten angefasst werden und der
+        # Dialog sonst unnötig lang wird.
+        self.btn_anzeige_toggle = QtWidgets.QToolButton()
+        self.btn_anzeige_toggle.setText('Anzeige (zweiter Bildschirm)')
+        self.btn_anzeige_toggle.setCheckable(True)
+        self.btn_anzeige_toggle.setChecked(False)
+        self.btn_anzeige_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.btn_anzeige_toggle.setArrowType(QtCore.Qt.RightArrow)
+        self.btn_anzeige_toggle.setStyleSheet('QToolButton {border:none; font-weight:600;}')
+        outer.addWidget(self.btn_anzeige_toggle)
+
+        anzeige_body = QtWidgets.QWidget()
+        anzeige_body.setVisible(False)
+        anzeige_form = QtWidgets.QFormLayout(anzeige_body)
+        outer.addWidget(anzeige_body)
+
+        def _toggle_anzeige(checked):
+            anzeige_body.setVisible(checked)
+            self.btn_anzeige_toggle.setArrowType(
+                QtCore.Qt.DownArrow if checked else QtCore.Qt.RightArrow
+            )
+
+        self.btn_anzeige_toggle.toggled.connect(_toggle_anzeige)
+
         anz = self.settings.anzeige
         self.spin_display_port = QtWidgets.QSpinBox()
         self.spin_display_port.setRange(1024, 65535)
@@ -264,6 +285,18 @@ class SettingsDialog(QtWidgets.QDialog):
             'Ein: voller Name.'
         )
         anzeige_form.addRow('', self.chk_display_full_names)
+        self.txt_display_hints = QtWidgets.QPlainTextEdit('\n'.join(anz.hinweise))
+        self.txt_display_hints.setFixedHeight(90)
+        self.txt_display_hints.setToolTip(
+            'Ein Hinweis pro Zeile. Mehrere Hinweise laufen als Slideshow durch.\n'
+            'Leer lassen blendet das Hinweis-Feld auf der Anzeige aus.'
+        )
+        anzeige_form.addRow('Hinweise (eine Zeile pro Hinweis)', self.txt_display_hints)
+        self.spin_display_hint_interval = QtWidgets.QSpinBox()
+        self.spin_display_hint_interval.setRange(2, 120)
+        self.spin_display_hint_interval.setSuffix(' s')
+        self.spin_display_hint_interval.setValue(anz.hinweisIntervallSekunden)
+        anzeige_form.addRow('Hinweis-Wechsel alle', self.spin_display_hint_interval)
 
         # ---- Test mode group -----------------------------------------
         test_group = QtWidgets.QGroupBox('Testmodus')
@@ -490,6 +523,14 @@ class SettingsDialog(QtWidgets.QDialog):
         self.settings.anzeige.port = self.spin_display_port.value()
         self.settings.anzeige.anzahlNaechste = self.spin_display_count.value()
         self.settings.anzeige.vollstaendigeNamen = self.chk_display_full_names.isChecked()
+        self.settings.anzeige.hinweise = [
+            line.strip()
+            for line in self.txt_display_hints.toPlainText().splitlines()
+            if line.strip()
+        ]
+        self.settings.anzeige.hinweisIntervallSekunden = (
+            self.spin_display_hint_interval.value()
+        )
         self.settings.overlay.image = Path(self.overlay_path) if self.overlay_path else None
         self.settings.ausgabeBasisPfad = Path(self.output_dir)
         self.settings.neueLernendeBasisPfad = Path(self.new_learner_dir)

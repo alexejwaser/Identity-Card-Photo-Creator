@@ -51,7 +51,9 @@ Beim Abschluss einer Klasse werden alle Fotos automatisch zu einem ZIP-Archiv zu
 Der Bildschirm-Knopf unten links in der Seitenleiste startet einen kleinen Webserver in der App. Die angezeigte Adresse (z. B. `http://192.168.1.42:8080`) auf einem zweiten Gerät im Browser öffnen – Laptop, Tablet oder ein Monitor am Stick, aufgestellt vor dem Fotoraum. Die Seite zeigt die aktuelle Person und die nächsten drei und aktualisiert sich selbst; mit F11 in den Vollbildmodus.
 
 - Beide Geräte müssen im selben WLAN sein. Fragt Windows beim ersten Start nach der Firewall, den Zugriff für **private Netzwerke** erlauben.
-- Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port und die Anzahl der angezeigten Personen lassen sich in den Einstellungen umstellen.
+- Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port, Anzahl der angezeigten Personen sowie die Hinweistexte lassen sich in den Einstellungen unter **Anzeige (zweiter Bildschirm)** umstellen.
+- Mehrere Hinweise (ein Hinweis pro Zeile) laufen auf der Seite als Slideshow durch.
+- Verliert die Seite den Kontakt zur App, meldet sie das selbst („Keine Verbindung zur App") statt weiter alte Namen aufzurufen.
 - Der Server läuft nur, solange er eingeschaltet ist, und startet nach einem Neustart der App nicht von selbst.
 
 ## Tastenkürzel

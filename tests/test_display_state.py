@@ -150,3 +150,36 @@ def test_done_when_class_was_finished_early():
 def test_no_student_ids_leak_into_the_payload():
     learners = make_learners('Anna', 'Beat')
     assert '100' not in repr(snap(learners, 0))
+
+
+# --- Hinweise --------------------------------------------------------------
+
+def test_hints_travel_with_the_snapshot():
+    learners = make_learners('Anna')
+    result = snap(learners, 0, hints=['Erster Hinweis', 'Zweiter Hinweis'])
+    assert result['hints'] == ['Erster Hinweis', 'Zweiter Hinweis']
+
+
+def test_hints_are_independent_of_the_state():
+    # Draussen soll der Hinweis auch beim Warten und nach Klassenschluss lesbar
+    # bleiben - er haengt bewusst nicht am Fotografier-Zustand.
+    hints = ['Bitte einzeln eintreten']
+    idle = build_snapshot(learners=[], current=0, klasse='', has_roster=False, hints=hints)
+    done = snap(make_learners('Anna'), 0, class_finished=True, hints=hints)
+    assert idle['hints'] == hints
+    assert done['hints'] == hints
+
+
+def test_blank_hint_lines_are_dropped():
+    # Das Textfeld in den Einstellungen produziert leicht Leerzeilen.
+    result = snap(make_learners('Anna'), 0, hints=['  Echt  ', '', '   '])
+    assert result['hints'] == ['Echt']
+
+
+def test_no_hints_yields_an_empty_list():
+    assert snap(make_learners('Anna'), 0)['hints'] == []
+
+
+def test_hint_interval_is_carried_and_floored():
+    assert snap(make_learners('Anna'), 0, hint_interval=25)['hint_interval'] == 25
+    assert snap(make_learners('Anna'), 0, hint_interval=0)['hint_interval'] == 1

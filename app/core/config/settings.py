@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import os
 import sys
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
@@ -61,6 +61,11 @@ def _default_new_learner_path() -> Path:
 # First-run defaults (used when settings.json does not yet exist)
 # ---------------------------------------------------------------------------
 
+# Hinweistexte der Wartezimmer-Anzeige (ein Eintrag = eine Folie der Slideshow).
+DEFAULT_HINWEISE = [
+    'Die Fotos werden lediglich intern abgespeichert und nicht veröffentlicht.',
+]
+
 DEFAULTS = {
     'ausgabeBasisPfad': str(_default_output_path()),
     'neueLernendeBasisPfad': str(_default_new_learner_path()),
@@ -91,6 +96,8 @@ DEFAULTS = {
         'port': 8080,
         'anzahlNaechste': 3,
         'vollstaendigeNamen': False,
+        'hinweise': list(DEFAULT_HINWEISE),
+        'hinweisIntervallSekunden': 10,
     },
     'zip': {'maxAnzahl': None, 'maxGroesseMB': None},
     'copyright': {'artist': '', 'copyright': ''},
@@ -176,6 +183,10 @@ class AnzeigeSettings(BaseModel):
     # Aus = "Anna M.". Die Seite hängt öffentlich im Gang, deshalb ist die
     # abgekürzte Form der Standard; volle Namen sind eine bewusste Entscheidung.
     vollstaendigeNamen: bool = False
+    # Hinweistexte, die rechts als Slideshow durchlaufen (ein Eintrag = eine
+    # Folie). Leere Liste = kein Hinweis-Panel.
+    hinweise: List[str] = Field(default_factory=lambda: list(DEFAULT_HINWEISE))
+    hinweisIntervallSekunden: int = 10
 
 
 class ZipSettings(BaseModel):

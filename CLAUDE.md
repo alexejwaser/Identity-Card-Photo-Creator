@@ -155,11 +155,27 @@ from `btn_display` in the sidebar's bottom row — never automatically.
   IDs never enter the payload** — the page hangs in a public hallway.
 - `page.py` — the browser page as a Python string constant, same rationale as the
   base64 icons: no extra PyInstaller `--add-data`, no external resources. Polls
-  `/api/state` once a second and re-renders only when `rev` changes.
+  `/api/state` once a second and re-renders only when `rev` changes. The visual
+  hierarchy is deliberately inverted: **the next person is the largest element**,
+  the one currently inside is small — nobody outside is waiting on them. Hints
+  rotate in a side panel with Apple-style dot indicators; a class-progress bar
+  sits above the footer. Every poll runs under an `AbortController` deadline —
+  without it a half-dead WLAN leaves the promise neither resolved nor rejected,
+  and the page silently freezes without ever reporting "no connection".
 - `server.py` — `DisplayServer` over `ThreadingHTTPServer` in a daemon thread.
   Modelled on `directshow_backend.py`: bind happens on the **calling** thread so a
   busy port raises `OSError` synchronously into the GUI, and `stop()` joins with a
   bounded timeout. `publish()` bumps `rev` only on a real content change.
+
+**Never show stale names silently.** `publish()` refreshes a timestamp on *every*
+call — even when the content is unchanged and `rev` stays put — and `/api/state`
+reports it as `age_seconds`. Past ~6 s the page raises a banner instead of quietly
+calling the wrong name; past 15 s the server logs a warning, so a freeze leaves
+evidence in `logs/app.log`. Each server start also mints an `instance` id; if the
+page sees a new one it reloads itself. Related: `allow_reuse_address` is **off on
+Windows**, because there `SO_REUSEADDR` lets a *second* process bind the same port
+and an orphaned older instance can serve a frozen snapshot while the live app keeps
+publishing — a busy port must fail loudly.
 
 **How stale data is prevented** (the whole point of the feature): `show_next()`
 pushes immediately, *and* a 1 Hz `QTimer` in `MainWindow` republishes the snapshot

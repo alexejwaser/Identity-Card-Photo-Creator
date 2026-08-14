@@ -43,6 +43,8 @@ def build_snapshot(
     class_finished: bool = False,
     count: int = 3,
     full_names: bool = False,
+    hints: Optional[Sequence[str]] = None,
+    hint_interval: int = 10,
 ) -> Dict[str, Any]:
     """Baut den Zustand, den die Anzeige zeigt.
 
@@ -51,10 +53,14 @@ def build_snapshot(
     ab der Rueckkehrposition berechnet statt ab *current* - sonst wuerden die
     Leute draussen aufgerufen, die nach der vorgezogenen Person stehen, statt
     derer, die tatsaechlich als Naechstes dran sind.
+
+    *hints* laufen rechts als Slideshow durch und haengen bewusst **nicht** am
+    Zustand: sie sollen auch beim Warten und nach Klassenschluss lesbar bleiben.
     """
     total = len(learners)
     klasse = (klasse or "").strip()
     standort = (standort or "").strip()
+    clean_hints = [h.strip() for h in (hints or []) if h and h.strip()]
 
     base: Dict[str, Any] = {
         "state": STATE_IDLE,
@@ -64,6 +70,8 @@ def build_snapshot(
         "standort": standort,
         "done": 0,
         "total": total,
+        "hints": clean_hints,
+        "hint_interval": max(int(hint_interval), 1),
     }
 
     if not has_roster or not klasse or total == 0:

@@ -5,7 +5,9 @@ Lock mit einem echten Thread prueft, statt Threading wegzumocken.
 """
 import json
 import socket
+import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -154,3 +156,67 @@ def test_busy_port_raises_synchronously():
 
 def test_urls_are_empty_while_stopped():
     assert DisplayServer().urls() == []
+
+
+# --- Herzschlag, Instanz-Kennung, Port-Belegung ----------------------------
+
+def test_age_is_reported_and_grows(server):
+    server.publish(snapshot())
+    first = json.loads(get(server, "/api/state")[1])["age_seconds"]
+    time.sleep(0.3)
+    second = json.loads(get(server, "/api/state")[1])["age_seconds"]
+    assert first >= 0
+    assert second > first
+
+
+def test_unchanged_publish_still_refreshes_the_heartbeat(server):
+    """Die Kernzusage: rev bleibt gleich (kein Flackern), der Zeitstempel wird
+    trotzdem aufgefrischt - sonst wuerde die Seite eine stillstehende Klasse
+    faelschlich als 'keine Verbindung' melden."""
+    server.publish(snapshot())
+    time.sleep(0.4)
+    aged = server.snapshot()["age_seconds"]
+    assert server.publish(snapshot()) is False      # Inhalt unveraendert
+    refreshed = server.snapshot()
+    assert refreshed["rev"] == 1                    # kein Neurendern ausgeloest
+    assert refreshed["age_seconds"] < aged          # aber Herzschlag erneuert
+
+
+def test_instance_is_stable_within_a_run_and_changes_between_runs(server):
+    first = json.loads(get(server, "/api/state")[1])["instance"]
+    assert first
+    assert json.loads(get(server, "/api/state")[1])["instance"] == first
+
+    other = DisplayServer()
+    other.start(0, host="127.0.0.1")
+    try:
+        assert other.snapshot()["instance"] != first
+    finally:
+        other.stop()
+
+
+def test_meta_fields_do_not_count_as_content_change(server):
+    # instance/age_seconds/rev duerfen den Inhaltsvergleich nicht stoeren,
+    # sonst zaehlte rev bei jedem Tick hoch und die Seite renderte im Sekundentakt.
+    server.publish(snapshot())
+    server.snapshot()
+    assert server.publish(snapshot()) is False
+
+
+def test_second_bind_on_the_same_port_is_rejected_on_windows():
+    """Unter Windows darf sich kein zweiter Prozess still danebenbinden - sonst
+    liefert eine uebriggebliebene Instanz eingefrorene Daten aus."""
+    first = DisplayServer()
+    port = first.start(0, host="127.0.0.1")
+    second = DisplayServer()
+    try:
+        if sys.platform == "win32":
+            with pytest.raises(OSError):
+                second.start(port, host="127.0.0.1")
+        else:
+            # Auf POSIX verhindert SO_REUSEADDR den doppelten Bind ohnehin.
+            with pytest.raises(OSError):
+                second.start(port, host="127.0.0.1")
+    finally:
+        second.stop()
+        first.stop()
