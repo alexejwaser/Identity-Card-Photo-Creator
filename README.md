@@ -10,6 +10,7 @@ Desktop-App zur schnellen Erstellung von Portraitfotos für Klassen und Gruppen,
 - Live-Vorschau mit konfigurierbarem Overlay, Kamera-Rotation und Bildausschnitt passend zur Zielauflösung
 - Kamera-Auswahl, Auflösung und Vorschau direkt in den Einstellungen konfigurierbar
 - Testmodus: erzeugt auf Knopfdruck eine zufällige Platzhalter-Excel-Datei, um den kompletten Ablauf ohne echte Daten zu testen
+- Wartezimmer-Anzeige: zeigt auf einem zweiten Gerät im Browser, wer gerade fotografiert wird und wer als Nächstes drankommt
 - Automatische ZIP-Bündelung der Fotos pro Klasse
 - Unterstützung für USB-Webcam (OpenCV), DSLR via `gphoto2`, oder Simulator-Modus (kein Kamera-Hardware nötig)
 
@@ -44,6 +45,14 @@ Die virtuelle Umgebung landet in `.venv/` im Projektordner (via `.gitignore` aus
 python -m app.main
 ```
 Beim Abschluss einer Klasse werden alle Fotos automatisch zu einem ZIP-Archiv zusammengefasst und der Zielordner geöffnet.
+
+### Wartezimmer-Anzeige (zweiter Bildschirm)
+
+Der Bildschirm-Knopf unten links in der Seitenleiste startet einen kleinen Webserver in der App. Die angezeigte Adresse (z. B. `http://192.168.1.42:8080`) auf einem zweiten Gerät im Browser öffnen – Laptop, Tablet oder ein Monitor am Stick, aufgestellt vor dem Fotoraum. Die Seite zeigt die aktuelle Person und die nächsten drei und aktualisiert sich selbst; mit F11 in den Vollbildmodus.
+
+- Beide Geräte müssen im selben WLAN sein. Fragt Windows beim ersten Start nach der Firewall, den Zugriff für **private Netzwerke** erlauben.
+- Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port und die Anzahl der angezeigten Personen lassen sich in den Einstellungen umstellen.
+- Der Server läuft nur, solange er eingeschaltet ist, und startet nach einem Neustart der App nicht von selbst.
 
 ## Tastenkürzel
 | Taste | Aktion |

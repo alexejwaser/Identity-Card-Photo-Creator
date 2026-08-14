@@ -11,6 +11,7 @@ import psutil
 
 from ..core.config.settings import Settings, CONFIG_DIR
 from ..core.controller import MainController
+from ..core.display import DisplayServer, build_snapshot
 from ..version import get_version
 from ..core.excel.reader import ExcelReader, Learner
 from ..core.excel.missed_writer import MissedWriter, MissedEntry
@@ -47,6 +48,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # not restart in an endless loop.
         self._camera_recovering = False
         self._auto_recover_attempts = 0
+        # Wartezimmer-Anzeige (zweiter Bildschirm). Startet nie von selbst –
+        # immer erst auf Knopfdruck. _class_finished merkt sich, dass "Fertig"
+        # gedrückt wurde: der Controller behält seinen Roster, sonst würde die
+        # Anzeige draussen weiterhin die letzte Person aufrufen.
+        self._display_server = DisplayServer(self.logger.getChild('DisplayServer'))
+        self._class_finished = False
+        self._display_hint_shown = False
         self._setup_ui()
         if hasattr(self.camera, "start_liveview"):
             self.camera.start_liveview()
@@ -86,6 +94,15 @@ class MainWindow(QtWidgets.QMainWindow):
             lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(self._GITHUB_URL))
         )
         self.statusBar().addWidget(self.btn_github)
+        # Rechte Seite der Statusleiste: Adresse der Wartezimmer-Anzeige,
+        # sichtbar nur solange der Server läuft. Klick kopiert sie, damit man
+        # sie nicht abtippen muss, wenn das Anzeigegerät danebensteht.
+        self.lbl_display_url = QtWidgets.QLabel('')
+        self.lbl_display_url.setStyleSheet('color:#4aa3ff; font-size:11px;')
+        self.lbl_display_url.setCursor(QtCore.Qt.PointingHandCursor)
+        self.lbl_display_url.setVisible(False)
+        self.lbl_display_url.mousePressEvent = self._copy_display_url
+        self.statusBar().addPermanentWidget(self.lbl_display_url)
         self.statusBar().setSizeGripEnabled(False)
         central = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(central)
@@ -153,12 +170,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_help.clicked.connect(self.show_onboarding)
         self.btn_settings.setParent(None)
         self.btn_settings.setFixedWidth(40)
+        # Wartezimmer-Anzeige an/aus. Checkable, damit der Zustand am Knopf
+        # ablesbar ist; die Adresse erscheint daneben in der Statusleiste.
+        self.btn_display = QtWidgets.QPushButton('')
+        self.btn_display.setObjectName('btn_display')
+        self.btn_display.setCheckable(True)
+        self.btn_display.setFixedWidth(40)
+        self.btn_display.setIcon(icon('monitor'))
+        self.btn_display.setIconSize(square_size)
+        self.btn_display.setToolTip('Wartezimmer-Anzeige starten (zweiter Bildschirm)')
+        self.btn_display.clicked.connect(self._toggle_display_server)
         bottom_row = QtWidgets.QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.addWidget(self.btn_help)
         bottom_row.addWidget(self.btn_settings)
+        bottom_row.addWidget(self.btn_display)
         bottom_row.addStretch()
         self.controls.layout().addLayout(bottom_row)
+
+        # Sicherheitsnetz: veröffentlicht den Zustand im Sekundentakt neu, egal
+        # über welchen Codepfad er sich geändert hat. show_next() pusht zusätzlich
+        # sofort – der Timer garantiert nur, dass die Anzeige nie hängen bleibt
+        # (z.B. nach "Fertig" oder einem Standortwechsel, die show_next() nicht
+        # aufrufen). Läuft nur, solange der Server läuft.
+        self._display_timer = QtCore.QTimer(self)
+        self._display_timer.setInterval(1000)
+        self._display_timer.timeout.connect(self._publish_display)
 
         # Tooltips for keyboard shortcuts (cleaner than baking them into labels)
         self.btn_capture.setToolTip('Leertaste')
@@ -249,7 +286,9 @@ class MainWindow(QtWidgets.QMainWindow):
             " QPushButton#btn_finish {text-align:left; padding:7px 12px;}"
             # Keep the compact icon buttons small (they are icon-only / tiny).
             " QToolButton#btn_search_class, QPushButton#btn_help,"
-            " QPushButton#btn_settings {text-align:center; padding:4px;}"
+            " QPushButton#btn_settings,"
+            " QPushButton#btn_display {text-align:center; padding:4px;}"
+            " QPushButton#btn_display:checked {border:1px solid #4aa3ff;}"
             # Group the sidebar controls into labelled category cards.
             " QGroupBox {border:1px solid #45474d; border-radius:6px;"
             " margin-top:12px; padding:8px 8px 4px 8px; font-weight:600;}"
@@ -297,6 +336,93 @@ class MainWindow(QtWidgets.QMainWindow):
         }
         msg_fn = mapping.get(level, QtWidgets.QMessageBox.information)
         msg_fn(self, title, message)
+
+    # --- Wartezimmer-Anzeige (zweiter Bildschirm) ----------------------------
+    def _toggle_display_server(self):
+        if self._display_server.running:
+            self._stop_display_server()
+            return
+
+        port = self.settings.anzeige.port
+        try:
+            self._display_server.start(port)
+        except OSError as exc:
+            self.btn_display.setChecked(False)
+            self._notify(
+                'Anzeige konnte nicht gestartet werden',
+                f'Port {port} lässt sich nicht öffnen ({exc}).\n\n'
+                'Vermutlich belegt ein anderes Programm den Port. '
+                'In den Einstellungen lässt sich ein anderer Port wählen.',
+                level='warning',
+            )
+            return
+
+        self.btn_display.setChecked(True)
+        self.btn_display.setToolTip('Wartezimmer-Anzeige beenden')
+        self._publish_display()
+        self._display_timer.start()
+        self._update_display_url()
+
+        if not self._display_hint_shown:
+            self._display_hint_shown = True
+            urls = self._display_server.urls()
+            url_text = '\n'.join(urls) if urls else 'Keine Netzwerkadresse gefunden.'
+            self._notify(
+                'Wartezimmer-Anzeige läuft',
+                'Auf dem zweiten Gerät im Browser öffnen:\n\n'
+                f'{url_text}\n\n'
+                'Beide Geräte müssen im selben WLAN sein. Fragt Windows nach der '
+                'Firewall, den Zugriff für private Netzwerke erlauben – sonst ist '
+                'die Seite von aussen nicht erreichbar.',
+            )
+
+    def _stop_display_server(self):
+        self._display_timer.stop()
+        self._display_server.stop()
+        self.btn_display.setChecked(False)
+        self.btn_display.setToolTip('Wartezimmer-Anzeige starten (zweiter Bildschirm)')
+        self.lbl_display_url.setVisible(False)
+
+    def _update_display_url(self):
+        urls = self._display_server.urls()
+        if not urls:
+            self.lbl_display_url.setText(f'Anzeige: Port {self._display_server.port}')
+            self.lbl_display_url.setToolTip('Keine Netzwerkadresse gefunden.')
+        else:
+            self.lbl_display_url.setText(f'Anzeige: {urls[0]}')
+            self.lbl_display_url.setToolTip(
+                'Klicken zum Kopieren. Erreichbar über:\n' + '\n'.join(urls)
+            )
+        self.lbl_display_url.setVisible(True)
+
+    def _copy_display_url(self, event):
+        urls = self._display_server.urls()
+        if urls:
+            QtWidgets.QApplication.clipboard().setText(urls[0])
+            self.statusBar().showMessage(f'{urls[0]} kopiert', 2000)
+
+    def _publish_display(self):
+        """Schiebt den aktuellen Zustand an die Anzeige.
+
+        Läuft immer auf dem GUI-Thread (aus show_next() oder dem 1-Hz-Timer);
+        der Server serialisiert intern gegen seine Handler-Threads.
+        """
+        if not self._display_server.running:
+            return
+        anzeige = self.settings.anzeige
+        self._display_server.publish(
+            build_snapshot(
+                learners=self.controller.learners,
+                current=self.controller.current,
+                jump_return=getattr(self, '_jump_return', None),
+                klasse=self.cmb_class.currentText(),
+                standort=self.cmb_location.currentText(),
+                has_roster=self.controller.reader is not None,
+                class_finished=self._class_finished,
+                count=anzeige.anzahlNaechste,
+                full_names=anzeige.vollstaendigeNamen,
+            )
+        )
 
     def load_excel(self):
         # Start the dialog in the folder of the last opened Excel file (remembered
@@ -414,6 +540,7 @@ class MainWindow(QtWidgets.QMainWindow):
             skip_photographed = (box.clickedButton() is skip_btn)
 
         self.controller.learners_for_class(location, class_name, skip_photographed=skip_photographed)
+        self._class_finished = False
 
         # Warn about duplicate student IDs – they would cause silent file collisions.
         dupes = self.reader.duplicate_ids(location, class_name)
@@ -444,6 +571,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.progress_bar.setFormat(f'{total}/{total}')
             self._populate_jump_menu()
             self._update_buttons()
+            self._publish_display()
             return
 
         name_text = f"{learner.vorname} {learner.nachname} ({done + 1}/{total})"
@@ -473,6 +601,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._populate_jump_menu()
         self._update_buttons()
+        self._publish_display()
 
     def _populate_jump_menu(self):
         menu = self.btn_jump_to.menu()
@@ -798,6 +927,10 @@ class MainWindow(QtWidgets.QMainWindow):
         location = self.controls.cmb_location.currentText()
         klasse = self.controls.cmb_class.currentText()
         zip_paths, out_dir = self.controller.finish(location, klasse)
+        # Der Controller behält seinen Roster – ohne dieses Flag würde die
+        # Anzeige draussen weiter die zuletzt aufgerufene Person zeigen.
+        self._class_finished = True
+        self._publish_display()
         if zip_paths:
             text = f'ZIP-Archiv {zip_paths[0].name} wurde erstellt.'
         else:
@@ -869,6 +1002,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return result['ok']
 
     def closeEvent(self, event):
+        self._stop_display_server()
         self.controller.camera.stop_liveview()
         super().closeEvent(event)
 
@@ -888,6 +1022,7 @@ class MainWindow(QtWidgets.QMainWindow):
         before_breite = self.settings.bild.breite
         before_hoehe = self.settings.bild.hoehe
         before_overlay = self.settings.overlay.image
+        before_display_port = self.settings.anzeige.port
         accepted = dlg.exec() == QtWidgets.QDialog.Accepted
         # Checked regardless of accept/reject: the dialog's "Als Standard
         # speichern" button can persist camera settings mid-dialog, so
@@ -916,6 +1051,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if accepted and self.settings.overlay.image != before_overlay:
             self.preview.set_overlay_image(self.settings.overlay.image)
         self.preview.timer.start()
+        # Ein Portwechsel greift nur über einen Neustart des Servers; Namensform
+        # und Anzahl holt der 1-Hz-Timer von selbst nach.
+        if self._display_server.running and self.settings.anzeige.port != before_display_port:
+            self._stop_display_server()
+            self._toggle_display_server()
         self._update_buttons()
         if accepted and getattr(dlg, '_test_mode_requested', False):
             self._activate_test_mode()

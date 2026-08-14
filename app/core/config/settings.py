@@ -87,6 +87,11 @@ DEFAULTS = {
         'deviceName': '',
         'devicePath': '',
     },
+    'anzeige': {
+        'port': 8080,
+        'anzahlNaechste': 3,
+        'vollstaendigeNamen': False,
+    },
     'zip': {'maxAnzahl': None, 'maxGroesseMB': None},
     'copyright': {'artist': '', 'copyright': ''},
     'lastExcelDir': '',
@@ -163,6 +168,16 @@ class KameraSettings(BaseModel):
     devicePath: str = ''
 
 
+class AnzeigeSettings(BaseModel):
+    """Wartezimmer-Anzeige auf einem zweiten Gerät (Browser im selben WLAN)."""
+
+    port: int = 8080
+    anzahlNaechste: int = 3
+    # Aus = "Anna M.". Die Seite hängt öffentlich im Gang, deshalb ist die
+    # abgekürzte Form der Standard; volle Namen sind eine bewusste Entscheidung.
+    vollstaendigeNamen: bool = False
+
+
 class ZipSettings(BaseModel):
     maxAnzahl: Optional[int] = None
     # maxGroesseMB: reserviert für zukünftige grössenbasierte ZIP-Aufteilung
@@ -195,6 +210,7 @@ class Settings(BaseModel):
     bild: BildSettings = Field(default_factory=BildSettings)
     overlay: OverlaySettings = Field(default_factory=OverlaySettings)
     kamera: KameraSettings = Field(default_factory=KameraSettings)
+    anzeige: AnzeigeSettings = Field(default_factory=AnzeigeSettings)
     zip: ZipSettings = Field(default_factory=ZipSettings)
     copyright: CopyrightSettings = Field(default_factory=CopyrightSettings)
     excelMapping: ExcelMapping = Field(default_factory=ExcelMapping)

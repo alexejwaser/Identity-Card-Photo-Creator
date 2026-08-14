@@ -228,6 +228,31 @@ class SettingsDialog(QtWidgets.QDialog):
                 self._mapping_widgets[key] = ed
                 form.addRow(label, ed)
 
+        # ---- Wartezimmer-Anzeige -------------------------------------
+        anzeige_group = QtWidgets.QGroupBox('Anzeige (zweiter Bildschirm)')
+        anzeige_form = QtWidgets.QFormLayout(anzeige_group)
+        outer.addWidget(anzeige_group)
+        anz = self.settings.anzeige
+        self.spin_display_port = QtWidgets.QSpinBox()
+        self.spin_display_port.setRange(1024, 65535)
+        self.spin_display_port.setValue(anz.port)
+        self.spin_display_port.setToolTip(
+            'Port, unter dem die Anzeige im Browser erreichbar ist.\n'
+            'Nur ändern, wenn der Standardport belegt ist.'
+        )
+        anzeige_form.addRow('Port', self.spin_display_port)
+        self.spin_display_count = QtWidgets.QSpinBox()
+        self.spin_display_count.setRange(1, 10)
+        self.spin_display_count.setValue(anz.anzahlNaechste)
+        anzeige_form.addRow('Anzahl nächster Personen', self.spin_display_count)
+        self.chk_display_full_names = QtWidgets.QCheckBox('Vollständige Namen anzeigen')
+        self.chk_display_full_names.setChecked(anz.vollstaendigeNamen)
+        self.chk_display_full_names.setToolTip(
+            'Aus: "Anna M." – die Anzeige hängt öffentlich im Gang.\n'
+            'Ein: voller Name.'
+        )
+        anzeige_form.addRow('', self.chk_display_full_names)
+
         # ---- Test mode group -----------------------------------------
         test_group = QtWidgets.QGroupBox('Testmodus')
         test_form = QtWidgets.QFormLayout(test_group)
@@ -429,6 +454,9 @@ class SettingsDialog(QtWidgets.QDialog):
             aufnahmedatum=_column_letter('aufnahmedatum', 'F'),
             grund=_column_letter('grund', 'G'),
         )
+        self.settings.anzeige.port = self.spin_display_port.value()
+        self.settings.anzeige.anzahlNaechste = self.spin_display_count.value()
+        self.settings.anzeige.vollstaendigeNamen = self.chk_display_full_names.isChecked()
         self.settings.overlay.image = Path(self.overlay_path) if self.overlay_path else None
         self.settings.ausgabeBasisPfad = Path(self.output_dir)
         self.settings.neueLernendeBasisPfad = Path(self.new_learner_dir)

@@ -138,6 +138,35 @@ mw.MainWindow._maybe_show_onboarding = lambda self: None
   changes apply in place (no device reopen). `load_excel` confirms before
   swapping the active roster.
 
+### Wartezimmer-Anzeige (`app/core/display/`)
+
+A stdlib-only HTTP server that publishes "who is being photographed now + the
+next three" to a browser on a second device outside the photo room. Started only
+from `btn_display` in the sidebar's bottom row — never automatically.
+
+- `state.py` — `build_snapshot(...)`, a **pure function** over
+  `(learners, current, jump_return, …)`. No Qt, no sockets, so every flow
+  (skip / retake / add person / jump / finish) is a plain unit test. Names are
+  abbreviated (`Anna M.`) unless `settings.anzeige.vollstaendigeNamen`; **student
+  IDs never enter the payload** — the page hangs in a public hallway.
+- `page.py` — the browser page as a Python string constant, same rationale as the
+  base64 icons: no extra PyInstaller `--add-data`, no external resources. Polls
+  `/api/state` once a second and re-renders only when `rev` changes.
+- `server.py` — `DisplayServer` over `ThreadingHTTPServer` in a daemon thread.
+  Modelled on `directshow_backend.py`: bind happens on the **calling** thread so a
+  busy port raises `OSError` synchronously into the GUI, and `stop()` joins with a
+  bounded timeout. `publish()` bumps `rev` only on a real content change.
+
+**How stale data is prevented** (the whole point of the feature): `show_next()`
+pushes immediately, *and* a 1 Hz `QTimer` in `MainWindow` republishes the snapshot
+regardless of which code path changed state. Correctness therefore does not depend
+on a complete list of hooks — a newly added mutation path is covered for free.
+Two states are derived rather than signalled: an empty `cmb_class` means `idle`
+(this covers location changes and Excel reloads, which clear the combo), and
+`_class_finished` means `done` (`finish_class()` deliberately leaves the roster in
+the controller). If you add a path that invalidates the roster, prefer extending
+those derivations over adding another publish call.
+
 ## Camera capture on Windows — the big gotcha
 
 **OpenCV cannot capture the production camera at all on the target machine.**
