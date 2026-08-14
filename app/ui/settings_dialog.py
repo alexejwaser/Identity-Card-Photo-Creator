@@ -33,7 +33,19 @@ class SettingsDialog(QtWidgets.QDialog):
         # per backend) can be looked up from the combo's index selection.
         self._devices_by_index = {}
 
-        outer = QtWidgets.QVBoxLayout(self)
+        # Der Inhalt ist höher als ein Laptop-Bildschirm, deshalb steckt alles
+        # in einer Scroll-Fläche. Die OK/Abbrechen-Leiste sitzt bewusst
+        # ausserhalb davon, damit sie immer erreichbar bleibt.
+        dialog_layout = QtWidgets.QVBoxLayout(self)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        content = QtWidgets.QWidget()
+        scroll.setWidget(content)
+        dialog_layout.addWidget(scroll)
+        outer = QtWidgets.QVBoxLayout(content)
+        outer.setContentsMargins(0, 0, 0, 0)
 
         # ---- Camera settings group -----------------------------------
         cam_group = QtWidgets.QGroupBox('Kamera-Einstellungen')
@@ -270,9 +282,30 @@ class SettingsDialog(QtWidgets.QDialog):
         self.buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
         )
-        form.addRow(self.buttons)
+        dialog_layout.addWidget(self.buttons)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+
+        # Gewünschte Grösse aus dem Inhalt ableiten (eine QScrollArea meldet die
+        # ihres Kindes nicht weiter, sonst öffnete der Dialog winzig) und auf den
+        # verfügbaren Bildschirm begrenzen; den Rest übernimmt die Scroll-Fläche.
+        # Ohne die Begrenzung ragt der Dialog auf 1080p unten heraus.
+        screen = self.screen() or QtGui.QGuiApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            margins = dialog_layout.contentsMargins()
+            chrome_w = margins.left() + margins.right()
+            chrome_h = (
+                margins.top()
+                + margins.bottom()
+                + dialog_layout.spacing()
+                + self.buttons.sizeHint().height()
+            )
+            wanted = content.sizeHint()
+            self.resize(
+                min(wanted.width() + chrome_w, available.width()),
+                min(wanted.height() + chrome_h, int(available.height() * 0.9)),
+            )
 
     # ------------------------------------------------------------------
     def _populate_devices(self):

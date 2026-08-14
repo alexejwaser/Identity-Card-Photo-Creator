@@ -54,11 +54,15 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**Pre-existing test failures (not yours to fix):** ~10 `MainWindow._init_camera`
-errors in `tests/test_photo_saving.py` + `tests/test_mainwindow_ui.py` (they
-reference an attribute that doesn't exist), plus 4 `tests/test_camera_enumerate.py`
-cases that fail on any machine with real cameras (they don't mock the MSMF
-enumeration path). Everything else is green — verify with a clean tree if unsure.
+**The suite is fully green** (85 passed). The long-standing `MainWindow._init_camera`
+errors are fixed: `_init_camera` belongs to `MainController`, so the `main_window`
+fixtures patch it there. Those 10 tests had never actually executed, so their fakes
+had rotted — `ExcelReader.learners()` gained `skip_photographed`, `duplicate_ids()`
+appeared, the skip reason moved into `_ask_skip_reason`, and the code calls
+`controller.excel_running()` (patching `MainWindow._excel_running`, which is dead
+code, silently disabled every capture on a machine with Excel open). The 4
+`test_camera_enumerate.py` cases now force the DirectShow-probing fallback via the
+`probing_path` fixture, so they no longer depend on the host having no camera.
 
 **Rendering the UI headless for a visual check:** offscreen renders show text as
 boxes (no Segoe UI in the offscreen platform) but layout/icons/colours are
