@@ -78,7 +78,9 @@ _PAGE_HTML = """<!doctype html>
     align-items: center;
     min-height: 0;
   }
-  #stage.has-hints { grid-template-columns: 1.15fr 1fr; }
+  /* Namen bekommen zwei Drittel, der Hinweis ein Drittel: die Warteschlange ist
+     das, wofür die Leute draussen stehen. */
+  #stage.has-hints { grid-template-columns: 2fr 1fr; }
   @media (max-width: 900px) {
     #stage.has-hints {
       grid-template-columns: 1fr;
