@@ -344,8 +344,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         port = self.settings.anzeige.port
+        local = self.settings.anzeige.modus == 'lokal'
+        host = (
+            DisplayServer.LOCAL_HOST if local else DisplayServer.NETWORK_HOST
+        )
         try:
-            self._display_server.start(port)
+            self._display_server.start(port, host=host)
         except OSError as exc:
             self.btn_display.setChecked(False)
             self._notify(
@@ -363,9 +367,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self._display_timer.start()
         self._update_display_url()
 
-        if not self._display_hint_shown:
+        urls = self._display_server.urls()
+        if local:
+            # Monitor hängt am Fotolaptop: die Seite gleich selbst aufmachen,
+            # damit niemand eine Adresse abtippen muss.
+            if urls:
+                QtGui.QDesktopServices.openUrl(QtCore.QUrl(urls[0]))
+            if not self._display_hint_shown:
+                self._display_hint_shown = True
+                self._notify(
+                    'Wartezimmer-Anzeige läuft',
+                    'Die Anzeige wurde im Browser geöffnet.\n\n'
+                    'Fenster auf den zweiten Bildschirm ziehen und mit F11 in den '
+                    'Vollbildmodus wechseln.',
+                )
+        elif not self._display_hint_shown:
             self._display_hint_shown = True
-            urls = self._display_server.urls()
             url_text = '\n'.join(urls) if urls else 'Keine Netzwerkadresse gefunden.'
             self._notify(
                 'Wartezimmer-Anzeige läuft',
@@ -388,6 +405,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if not urls:
             self.lbl_display_url.setText(f'Anzeige: Port {self._display_server.port}')
             self.lbl_display_url.setToolTip('Keine Netzwerkadresse gefunden.')
+        elif self._display_server.local_only:
+            self.lbl_display_url.setText(f'Anzeige (lokal): {urls[0]}')
+            self.lbl_display_url.setToolTip(
+                'Nur auf diesem Rechner erreichbar – für einen Monitor am '
+                'Fotolaptop.\nKlicken zum Kopieren.'
+            )
         else:
             self.lbl_display_url.setText(f'Anzeige: {urls[0]}')
             self.lbl_display_url.setToolTip(
@@ -1031,7 +1054,7 @@ class MainWindow(QtWidgets.QMainWindow):
         before_breite = self.settings.bild.breite
         before_hoehe = self.settings.bild.hoehe
         before_overlay = self.settings.overlay.image
-        before_display_port = self.settings.anzeige.port
+        before_display = (self.settings.anzeige.port, self.settings.anzeige.modus)
         accepted = dlg.exec() == QtWidgets.QDialog.Accepted
         # Checked regardless of accept/reject: the dialog's "Als Standard
         # speichern" button can persist camera settings mid-dialog, so
@@ -1060,9 +1083,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if accepted and self.settings.overlay.image != before_overlay:
             self.preview.set_overlay_image(self.settings.overlay.image)
         self.preview.timer.start()
-        # Ein Portwechsel greift nur über einen Neustart des Servers; Namensform
-        # und Anzahl holt der 1-Hz-Timer von selbst nach.
-        if self._display_server.running and self.settings.anzeige.port != before_display_port:
+        # Port und Modus bestimmen den Socket, greifen also nur über einen
+        # Neustart des Servers; Namensform, Anzahl und Hinweise holt der
+        # 1-Hz-Timer von selbst nach.
+        after_display = (self.settings.anzeige.port, self.settings.anzeige.modus)
+        if self._display_server.running and after_display != before_display:
             self._stop_display_server()
             self._toggle_display_server()
         self._update_buttons()

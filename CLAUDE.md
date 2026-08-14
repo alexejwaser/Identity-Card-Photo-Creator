@@ -146,7 +146,12 @@ mw.MainWindow._maybe_show_onboarding = lambda self: None
 
 A stdlib-only HTTP server that publishes "who is being photographed now + the
 next three" to a browser on a second device outside the photo room. Started only
-from `btn_display` in the sidebar's bottom row — never automatically.
+from `btn_display` in the sidebar's bottom row — never automatically. Two modes
+(`settings.anzeige.modus`): **netzwerk** binds `0.0.0.0` for a second device in the
+WLAN; **lokal** binds `127.0.0.1` for a monitor on HDMI and opens the page in the
+default browser itself. Local mode triggers no Windows firewall prompt and exposes
+nothing — `DisplayServer.urls()` returns only `localhost` there, because the LAN
+addresses would be dead ends.
 
 - `state.py` — `build_snapshot(...)`, a **pure function** over
   `(learners, current, jump_return, …)`. No Qt, no sockets, so every flow

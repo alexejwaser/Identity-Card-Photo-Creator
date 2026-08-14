@@ -266,6 +266,18 @@ class SettingsDialog(QtWidgets.QDialog):
         self.btn_anzeige_toggle.toggled.connect(_toggle_anzeige)
 
         anz = self.settings.anzeige
+        self.cmb_display_mode = QtWidgets.QComboBox()
+        self.cmb_display_mode.addItem('Netzwerk – zweites Gerät im WLAN', 'netzwerk')
+        self.cmb_display_mode.addItem('Lokal – Monitor an diesem Laptop', 'lokal')
+        self.cmb_display_mode.setCurrentIndex(1 if anz.modus == 'lokal' else 0)
+        self.cmb_display_mode.setToolTip(
+            'Netzwerk: die Anzeige wird im WLAN veröffentlicht und auf einem\n'
+            'zweiten Gerät im Browser geöffnet.\n\n'
+            'Lokal: die Anzeige ist nur auf diesem Rechner erreichbar und öffnet\n'
+            'sich beim Start selbst im Browser – für einen Monitor per HDMI.\n'
+            'Es wird nichts ins Netzwerk freigegeben.'
+        )
+        anzeige_form.addRow('Modus', self.cmb_display_mode)
         self.spin_display_port = QtWidgets.QSpinBox()
         self.spin_display_port.setRange(1024, 65535)
         self.spin_display_port.setValue(anz.port)
@@ -520,6 +532,7 @@ class SettingsDialog(QtWidgets.QDialog):
             aufnahmedatum=_column_letter('aufnahmedatum', 'F'),
             grund=_column_letter('grund', 'G'),
         )
+        self.settings.anzeige.modus = self.cmb_display_mode.currentData()
         self.settings.anzeige.port = self.spin_display_port.value()
         self.settings.anzeige.anzahlNaechste = self.spin_display_count.value()
         self.settings.anzeige.vollstaendigeNamen = self.chk_display_full_names.isChecked()

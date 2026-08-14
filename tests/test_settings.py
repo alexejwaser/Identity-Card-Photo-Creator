@@ -87,3 +87,12 @@ def test_anzeige_defaults_apply_to_an_older_settings_file(tmp_path):
     settings = Settings.load(cfg)
     assert settings.anzeige.port == 8080
     assert settings.anzeige.hinweise  # Standardhinweis vorhanden
+
+
+def test_anzeige_modus_roundtrip(tmp_path):
+    cfg = tmp_path / "settings.json"
+    s = Settings.load(cfg)
+    assert s.anzeige.modus == "netzwerk"   # Standard bleibt das bisherige Verhalten
+    s.anzeige.modus = "lokal"
+    s.save(cfg)
+    assert Settings.load(cfg).anzeige.modus == "lokal"

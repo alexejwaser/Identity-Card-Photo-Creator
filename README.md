@@ -48,7 +48,11 @@ Beim Abschluss einer Klasse werden alle Fotos automatisch zu einem ZIP-Archiv zu
 
 ### Wartezimmer-Anzeige (zweiter Bildschirm)
 
-Der Bildschirm-Knopf unten links in der Seitenleiste startet einen kleinen Webserver in der App. Die angezeigte Adresse (z. B. `http://192.168.1.42:8080`) auf einem zweiten Gerät im Browser öffnen – Laptop, Tablet oder ein Monitor am Stick, aufgestellt vor dem Fotoraum. Die Seite zeigt die aktuelle Person und die nächsten drei und aktualisiert sich selbst; mit F11 in den Vollbildmodus.
+Der Bildschirm-Knopf unten links in der Seitenleiste startet die Anzeige. Sie zeigt die aktuelle Person und die nächsten drei und aktualisiert sich selbst; mit F11 in den Vollbildmodus. In den Einstellungen unter **Anzeige (zweiter Bildschirm)** gibt es dafür zwei Modi:
+
+**Lokal** – für einen externen Monitor per HDMI am Fotolaptop. Die Anzeige öffnet sich beim Start automatisch im Browser; Fenster auf den zweiten Bildschirm ziehen, F11. Es wird nichts ins Netzwerk freigegeben, Windows fragt nicht nach der Firewall.
+
+**Netzwerk** – für ein zweites Gerät im selben WLAN. Die angezeigte Adresse (z. B. `http://192.168.1.42:8080`) dort im Browser öffnen.
 
 - Beide Geräte müssen im selben WLAN sein. Fragt Windows beim ersten Start nach der Firewall, den Zugriff für **private Netzwerke** erlauben.
 - Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port, Anzahl der angezeigten Personen sowie die Hinweistexte lassen sich in den Einstellungen unter **Anzeige (zweiter Bildschirm)** umstellen.

@@ -93,6 +93,7 @@ DEFAULTS = {
         'devicePath': '',
     },
     'anzeige': {
+        'modus': 'netzwerk',
         'port': 8080,
         'anzahlNaechste': 3,
         'vollstaendigeNamen': False,
@@ -178,6 +179,10 @@ class KameraSettings(BaseModel):
 class AnzeigeSettings(BaseModel):
     """Wartezimmer-Anzeige auf einem zweiten Gerät (Browser im selben WLAN)."""
 
+    # 'netzwerk' = auf allen Interfaces erreichbar (zweites Gerät im WLAN),
+    # 'lokal'    = nur 127.0.0.1, für einen Monitor direkt am Fotolaptop. Lokal
+    # fragt Windows nicht nach der Firewall und nach aussen ist nichts offen.
+    modus: str = 'netzwerk'
     port: int = 8080
     anzahlNaechste: int = 3
     # Aus = "Anna M.". Die Seite hängt öffentlich im Gang, deshalb ist die

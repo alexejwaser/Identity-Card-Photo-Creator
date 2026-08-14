@@ -187,10 +187,16 @@ class _Server(ThreadingHTTPServer):
 class DisplayServer:
     """Steuert Lebenszyklus und Inhalt der Wartezimmer-Anzeige."""
 
+    #: Bind-Adresse fuer den lokalen Modus (Monitor direkt am Fotolaptop).
+    LOCAL_HOST = "127.0.0.1"
+    #: Bind-Adresse fuer den Netzwerkmodus (zweites Geraet im WLAN).
+    NETWORK_HOST = "0.0.0.0"
+
     def __init__(self, logger_: Optional[logging.Logger] = None):
         self.logger = logger_ or logger
         self._server: Optional[_Server] = None
         self._thread: Optional[threading.Thread] = None
+        self._host: str = self.NETWORK_HOST
 
     # lifecycle --------------------------------------------------------------
     @property
@@ -211,6 +217,7 @@ class DisplayServer:
         if self._server is not None:
             return self.port
         server = _Server((host, port))
+        self._host = host
         thread = threading.Thread(
             target=server.serve_forever,
             args=(_POLL_INTERVAL_SECONDS,),
@@ -254,8 +261,19 @@ class DisplayServer:
         return self._server.snapshot()
 
     # display helpers --------------------------------------------------------
+    @property
+    def local_only(self) -> bool:
+        """True, wenn der Server nur auf dem eigenen Rechner erreichbar ist."""
+        return self._host.startswith("127.")
+
     def urls(self) -> List[str]:
-        """Alle brauchbaren URLs zum Eintippen auf dem Anzeigegeraet."""
+        """Alle brauchbaren URLs zum Oeffnen der Anzeige.
+
+        Im lokalen Modus ist das genau eine - die LAN-Adressen des Rechners
+        fuehren dort ins Leere, weil gar nicht auf ihnen gelauscht wird.
+        """
         if self._server is None:
             return []
+        if self.local_only:
+            return [f"http://localhost:{self.port}"]
         return [f"http://{addr}:{self.port}" for addr in local_addresses()]

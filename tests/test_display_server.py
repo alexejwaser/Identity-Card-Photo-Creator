@@ -220,3 +220,44 @@ def test_second_bind_on_the_same_port_is_rejected_on_windows():
     finally:
         second.stop()
         first.stop()
+
+
+# --- Lokaler Modus ---------------------------------------------------------
+
+def test_local_mode_reports_localhost_only():
+    """Im lokalen Modus fuehren die LAN-Adressen ins Leere - es wird gar nicht
+    auf ihnen gelauscht, also darf die App sie auch nicht anbieten."""
+    srv = DisplayServer()
+    port = srv.start(0, host=DisplayServer.LOCAL_HOST)
+    try:
+        assert srv.local_only is True
+        assert srv.urls() == [f"http://localhost:{port}"]
+    finally:
+        srv.stop()
+
+
+def test_network_mode_is_not_marked_local():
+    srv = DisplayServer()
+    srv.start(0, host=DisplayServer.NETWORK_HOST)
+    try:
+        assert srv.local_only is False
+        assert all(u.startswith("http://") for u in srv.urls())
+        assert not any("localhost" in u for u in srv.urls())
+    finally:
+        srv.stop()
+
+
+def test_local_mode_still_serves_the_page():
+    srv = DisplayServer()
+    port = srv.start(0, host=DisplayServer.LOCAL_HOST)
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/state", timeout=TIMEOUT
+        ) as r:
+            assert r.status == 200
+    finally:
+        srv.stop()
+
+
+def test_urls_are_empty_before_start():
+    assert DisplayServer().urls() == []
