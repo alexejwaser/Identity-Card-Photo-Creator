@@ -201,7 +201,14 @@ _PAGE_HTML = """<!doctype html>
     letter-spacing: 0;
     font-variant-numeric: tabular-nums;
   }
-  #upcoming li.none { grid-template-columns: 1fr; }
+  /* Ohne Ziffer keine Ziffernspalte. Muss auch die Kompakt-Regel weiter unten
+     ueberstimmen, sonst quetscht sie den Satz in die schmale Spalte und er
+     bricht Buchstabe fuer Buchstabe um. */
+  #upcoming li.none,
+  body.compact #upcoming li.none {
+    grid-template-columns: 1fr;
+    word-break: normal;
+  }
   #upcoming li:nth-child(2) {
     font-size: var(--fs-next-2); color: var(--dim);
     letter-spacing: -0.02em; font-weight: 500;
