@@ -278,6 +278,15 @@ class SettingsDialog(QtWidgets.QDialog):
             'Es wird nichts ins Netzwerk freigegeben.'
         )
         anzeige_form.addRow('Modus', self.cmb_display_mode)
+        self.cmb_display_layout = QtWidgets.QComboBox()
+        self.cmb_display_layout.addItem('Standard – mit Hinweisen', False)
+        self.cmb_display_layout.addItem('Kompakt – kleines Display, nur Namen', True)
+        self.cmb_display_layout.setCurrentIndex(1 if anz.kompakt else 0)
+        self.cmb_display_layout.setToolTip(
+            'Kompakt blendet die Hinweise aus und vergrössert die Namen deutlich –\n'
+            'gedacht für kleine Bildschirme (z.B. ein 7"-Mini-Display).'
+        )
+        anzeige_form.addRow('Layout', self.cmb_display_layout)
         self.spin_display_port = QtWidgets.QSpinBox()
         self.spin_display_port.setRange(1024, 65535)
         self.spin_display_port.setValue(anz.port)
@@ -533,6 +542,7 @@ class SettingsDialog(QtWidgets.QDialog):
             grund=_column_letter('grund', 'G'),
         )
         self.settings.anzeige.modus = self.cmb_display_mode.currentData()
+        self.settings.anzeige.kompakt = bool(self.cmb_display_layout.currentData())
         self.settings.anzeige.port = self.spin_display_port.value()
         self.settings.anzeige.anzahlNaechste = self.spin_display_count.value()
         self.settings.anzeige.vollstaendigeNamen = self.chk_display_full_names.isChecked()

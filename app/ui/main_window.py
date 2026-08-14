@@ -451,6 +451,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     full_names=anzeige.vollstaendigeNamen,
                     hints=anzeige.hinweise,
                     hint_interval=anzeige.hinweisIntervallSekunden,
+                    compact=anzeige.kompakt,
                 )
             )
         except Exception:

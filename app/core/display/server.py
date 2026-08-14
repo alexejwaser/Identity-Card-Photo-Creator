@@ -57,6 +57,7 @@ _IDLE_SNAPSHOT: Dict[str, Any] = {
     "total": 0,
     "hints": [],
     "hint_interval": 10,
+    "compact": False,
 }
 
 

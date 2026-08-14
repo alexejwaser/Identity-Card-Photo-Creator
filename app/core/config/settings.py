@@ -95,6 +95,7 @@ DEFAULTS = {
     'anzeige': {
         'modus': 'netzwerk',
         'port': 8080,
+        'kompakt': False,
         'anzahlNaechste': 3,
         'vollstaendigeNamen': False,
         'hinweise': list(DEFAULT_HINWEISE),
@@ -184,6 +185,9 @@ class AnzeigeSettings(BaseModel):
     # fragt Windows nicht nach der Firewall und nach aussen ist nichts offen.
     modus: str = 'netzwerk'
     port: int = 8080
+    # Kompakt = für kleine Displays (z.B. 7"): keine Hinweise, dafür deutlich
+    # grössere Namen und weniger Randabstand.
+    kompakt: bool = False
     anzahlNaechste: int = 3
     # Aus = "Anna M.". Die Seite hängt öffentlich im Gang, deshalb ist die
     # abgekürzte Form der Standard; volle Namen sind eine bewusste Entscheidung.

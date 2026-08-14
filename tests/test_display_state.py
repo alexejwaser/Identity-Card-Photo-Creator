@@ -183,3 +183,17 @@ def test_no_hints_yields_an_empty_list():
 def test_hint_interval_is_carried_and_floored():
     assert snap(make_learners('Anna'), 0, hint_interval=25)['hint_interval'] == 25
     assert snap(make_learners('Anna'), 0, hint_interval=0)['hint_interval'] == 1
+
+
+# --- Kompaktmodus ----------------------------------------------------------
+
+def test_compact_flag_travels_with_the_snapshot():
+    assert snap(make_learners('Anna'), 0, compact=True)['compact'] is True
+    assert snap(make_learners('Anna'), 0)['compact'] is False
+
+
+def test_compact_does_not_strip_hints_at_the_source():
+    # Ausgeblendet wird erst auf der Seite - so wirkt ein Umschalten sofort,
+    # ohne dass draussen jemand neu laden muss.
+    result = snap(make_learners('Anna'), 0, compact=True, hints=['Ein Hinweis'])
+    assert result['hints'] == ['Ein Hinweis']

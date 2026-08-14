@@ -151,7 +151,9 @@ from `btn_display` in the sidebar's bottom row — never automatically. Two mode
 WLAN; **lokal** binds `127.0.0.1` for a monitor on HDMI and opens the page in the
 default browser itself. Local mode triggers no Windows firewall prompt and exposes
 nothing — `DisplayServer.urls()` returns only `localhost` there, because the LAN
-addresses would be dead ends.
+addresses would be dead ends. A separate `settings.anzeige.kompakt` switches the page
+layout (hints hidden, much larger names) for small displays; it rides in the
+snapshot, so flipping it applies live without a reload.
 
 - `state.py` — `build_snapshot(...)`, a **pure function** over
   `(learners, current, jump_return, …)`. No Qt, no sockets, so every flow

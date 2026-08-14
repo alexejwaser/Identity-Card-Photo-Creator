@@ -96,3 +96,12 @@ def test_anzeige_modus_roundtrip(tmp_path):
     s.anzeige.modus = "lokal"
     s.save(cfg)
     assert Settings.load(cfg).anzeige.modus == "lokal"
+
+
+def test_anzeige_kompakt_roundtrip(tmp_path):
+    cfg = tmp_path / "settings.json"
+    s = Settings.load(cfg)
+    assert s.anzeige.kompakt is False   # Standard bleibt das grosse Layout
+    s.anzeige.kompakt = True
+    s.save(cfg)
+    assert Settings.load(cfg).anzeige.kompakt is True

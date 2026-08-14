@@ -45,6 +45,7 @@ def build_snapshot(
     full_names: bool = False,
     hints: Optional[Sequence[str]] = None,
     hint_interval: int = 10,
+    compact: bool = False,
 ) -> Dict[str, Any]:
     """Baut den Zustand, den die Anzeige zeigt.
 
@@ -72,6 +73,7 @@ def build_snapshot(
         "total": total,
         "hints": clean_hints,
         "hint_interval": max(int(hint_interval), 1),
+        "compact": bool(compact),
     }
 
     if not has_roster or not klasse or total == 0:

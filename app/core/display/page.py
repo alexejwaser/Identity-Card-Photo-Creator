@@ -247,16 +247,34 @@ _PAGE_HTML = """<!doctype html>
     transition: opacity .45s ease;
   }
   #hint-text.fading { opacity: 0; }
-  #dots { display: flex; justify-content: center; gap: 10px; }
+  #dots { display: flex; justify-content: center; align-items: center; gap: 10px; }
   /* Punkt-Indikatoren im Apple-Stil: der aktive wird zur breiteren Pille. */
   #dots span {
     width: 9px;
     height: 9px;
     border-radius: 999px;
     background: var(--line);
+    position: relative;
+    overflow: hidden;
     transition: width .35s cubic-bezier(.16,1,.3,1), background-color .35s ease;
   }
-  #dots span.active { width: 28px; background: var(--muted); }
+  #dots span.active {
+    width: 30px;
+    background: color-mix(in srgb, var(--muted) 32%, transparent);
+  }
+  /* Die aktive Pille laeuft im Takt des Hinweis-Wechsels voll - so ist sichtbar,
+     dass die Folie von selbst weiterspringt, und wie lange es noch dauert.
+     scaleX statt width: kein Layout, und die runden Enden clippt die Pille. */
+  #dots span.active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--dim);
+    transform: scaleX(0);
+    transform-origin: left center;
+    animation: dotfill var(--hint-duration, 10s) linear forwards;
+  }
+  @keyframes dotfill { to { transform: scaleX(1); } }
 
   #message {
     display: flex;
@@ -295,9 +313,30 @@ _PAGE_HTML = """<!doctype html>
   /* Kurz aufhellen statt Glow: ein farbiger Schein ohne Versatz auf dunklem
      Grund ist Deko, kein Lichtsystem. */
   #bar.bumped { filter: brightness(1.4); }
+  /* Kompaktmodus: kleines Display (z.B. 7"). Hinweise weg, Namen deutlich
+     groesser, weniger Rand - aus zwei Metern soll nur der Name zaehlen. */
+  body.compact {
+    --pad-page: clamp(10px, 2.2vh, 30px) clamp(12px, 2.4vw, 36px);
+    --fs-meta:   clamp(11px, 2.2vh, 26px);
+    --fs-label:  clamp(12px, 2.6vh, 30px);
+    --fs-now:    clamp(16px, 5vh, 54px);
+    --fs-next-1: clamp(40px, 17vh, 190px);
+    --fs-next-2: clamp(28px, 11vh, 124px);
+    --fs-next-3: clamp(24px, 8.5vh, 94px);
+    --fs-next-n: clamp(20px, 6.5vh, 70px);
+    --sp-apart:  clamp(12px, 2.2vh, 30px);
+  }
+  body.compact #hints { display: none; }
+  body.compact #stage,
+  body.compact #stage.has-hints { grid-template-columns: 1fr; }
+  body.compact #upcoming li {
+    grid-template-columns: clamp(26px, 7vh, 76px) 1fr;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     #bar, #hint-text, #dots span { transition: none; }
-    #stale::before { animation: none; }
+    #stale::before, #dots span.active::after { animation: none; }
+    #dots span.active::after { transform: scaleX(1); }
   }
 
   footer {
@@ -320,7 +359,7 @@ _PAGE_HTML = """<!doctype html>
   <div id="stage">
     <div id="queue-col">
       <main id="queue" hidden>
-        <p id="now-line"><span>Jetzt im Studio</span><span id="now"></span></p>
+        <p id="now-line"><span>Wird gerade fotografiert</span><span id="now"></span></p>
         <div class="rule"></div>
         <div class="section-label">Als N&auml;chstes</div>
         <ol id="upcoming"></ol>
@@ -403,7 +442,9 @@ _PAGE_HTML = """<!doctype html>
     }, 450);
   }
 
-  function setHints(list, intervalSeconds) {
+  function setHints(list, intervalSeconds, compact) {
+    // Im Kompaktmodus zaehlen nur die Namen - Hinweise entfallen ganz.
+    if (compact) { list = []; }
     // Nur bei echter Aenderung neu starten - sonst spraenge die Slideshow bei
     // jedem Namenswechsel zurueck auf den ersten Hinweis.
     var key = JSON.stringify(list) + '|' + intervalSeconds;
@@ -416,11 +457,15 @@ _PAGE_HTML = """<!doctype html>
       elStage.classList.remove('has-hints');
       return;
     }
+    var seconds = Math.max(intervalSeconds, 2);
+    // Speist die Fuell-Animation der aktiven Pille, damit sie exakt im Takt des
+    // Wechsels vollaeuft.
+    elDots.style.setProperty('--hint-duration', seconds + 's');
     elHints.hidden = false;
     elStage.classList.add('has-hints');
     showHint(0);
     if (hints.length > 1) {
-      hintTimer = setInterval(advanceHint, Math.max(intervalSeconds, 2) * 1000);
+      hintTimer = setInterval(advanceHint, seconds * 1000);
     }
   }
 
@@ -503,7 +548,8 @@ _PAGE_HTML = """<!doctype html>
         }
 
         markStale(data.age_seconds >= STALE_AFTER);
-        setHints(data.hints || [], data.hint_interval || 10);
+        document.body.classList.toggle('compact', !!data.compact);
+        setHints(data.hints || [], data.hint_interval || 10, !!data.compact);
 
         // Nur bei echter Aenderung neu rendern - sonst flackert die Anzeige
         // z.B. waehrend eines wiederholten Fotos im Sekundentakt.

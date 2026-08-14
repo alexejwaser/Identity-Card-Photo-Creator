@@ -54,6 +54,8 @@ Der Bildschirm-Knopf unten links in der Seitenleiste startet die Anzeige. Sie ze
 
 **Netzwerk** – für ein zweites Gerät im selben WLAN. Die angezeigte Adresse (z. B. `http://192.168.1.42:8080`) dort im Browser öffnen.
 
+Dazu ein **Layout**-Schalter: *Standard* zeigt rechts die Hinweise, *Kompakt* blendet sie aus und vergrössert die Namen deutlich – gedacht für kleine Bildschirme wie ein 7"-Mini-Display.
+
 - Beide Geräte müssen im selben WLAN sein. Fragt Windows beim ersten Start nach der Firewall, den Zugriff für **private Netzwerke** erlauben.
 - Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port, Anzahl der angezeigten Personen sowie die Hinweistexte lassen sich in den Einstellungen unter **Anzeige (zweiter Bildschirm)** umstellen.
 - Mehrere Hinweise (ein Hinweis pro Zeile) laufen auf der Seite als Slideshow durch.
