@@ -56,7 +56,7 @@ Der Bildschirm-Knopf unten links in der Seitenleiste startet die Anzeige. Sie ze
 
 Dazu ein **Layout**-Schalter: *Standard* zeigt rechts die Hinweise, *Kompakt* blendet sie aus und vergrössert die Namen deutlich – gedacht für kleine Bildschirme wie ein 7"-Mini-Display.
 
-- Beide Geräte müssen im selben WLAN sein. Fragt Windows beim ersten Start nach der Firewall, den Zugriff für **private Netzwerke** erlauben.
+- Nur im **Netzwerk**-Modus: beide Geräte müssen im selben WLAN sein, und fragt Windows beim ersten Start nach der Firewall, den Zugriff für **private Netzwerke** erlauben. Im Lokal-Modus entfällt beides – dort steht in der Statusleiste `Anzeige (lokal): http://localhost:8080`.
 - Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port, Anzahl der angezeigten Personen sowie die Hinweistexte lassen sich in den Einstellungen unter **Anzeige (zweiter Bildschirm)** umstellen.
 - Mehrere Hinweise (ein Hinweis pro Zeile) laufen auf der Seite als Slideshow durch.
 - Verliert die Seite den Kontakt zur App, meldet sie das selbst („Keine Verbindung zur App") statt weiter alte Namen aufzurufen.

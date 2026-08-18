@@ -11,16 +11,12 @@ Der Anzeige-Port 8080 wird hier nie gebunden: settings.anzeige.port = 0 laesst
 das Betriebssystem einen freien Port waehlen.
 """
 import json
-import os
 import socket
 import urllib.request
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6 import QtCore
 
-from app.core.config.settings import Settings
 from app.core.display.controller import DisplayController, DisplayContext
 from app.core.display.server import DisplayServer
 from app.core.excel.reader import Learner
@@ -31,11 +27,16 @@ TIMEOUT = 5
 # --- Hilfen ----------------------------------------------------------------
 
 @pytest.fixture
-def settings(tmp_path):
-    s = Settings.load(tmp_path / "settings.json")
-    s.anzeige.port = 0          # niemals 8080 in Tests
-    s.anzeige.modus = "lokal"   # Standard hier: alles auf Loopback
-    return s
+def settings(settings):
+    """Die gemeinsamen Settings aus conftest.py, auf die Anzeige zugeschnitten.
+
+    Gleicher Name wie das Fixture in conftest.py: pytest reicht das aeussere
+    als Argument herein (dokumentiertes Override-Muster), sodass hier nur die
+    beiden Felder stehen, die diese Datei wirklich anders braucht.
+    """
+    settings.anzeige.port = 0          # niemals 8080 in Tests
+    settings.anzeige.modus = "lokal"   # Standard hier: alles auf Loopback
+    return settings
 
 
 @pytest.fixture
