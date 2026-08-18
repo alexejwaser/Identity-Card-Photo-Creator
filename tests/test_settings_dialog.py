@@ -1,12 +1,6 @@
-import os
-import copy
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
 import pytest
 from PySide6 import QtGui, QtWidgets
 
-from app.core.config.settings import Settings, DEFAULTS
 from app.core.camera.enumerate import CameraDevice
 import app.ui.settings_dialog as settings_dialog_module
 from app.ui.settings_dialog import SettingsDialog
@@ -31,23 +25,6 @@ class FakePreviewCamera:
 
     def get_preview_qimage(self):
         return QtGui.QImage(4, 4, QtGui.QImage.Format_RGB888)
-
-
-@pytest.fixture
-def settings(tmp_path):
-    data = copy.deepcopy(DEFAULTS)
-    data["ausgabeBasisPfad"] = tmp_path / "out"
-    data["missedPath"] = tmp_path / "missed.xlsx"
-    return Settings(
-        ausgabeBasisPfad=data["ausgabeBasisPfad"],
-        missedPath=data["missedPath"],
-        bild=data["bild"],
-        overlay=data["overlay"],
-        kamera=data["kamera"],
-        zip=data["zip"],
-        copyright=data["copyright"],
-        excelMapping=data["excelMapping"],
-    )
 
 
 @pytest.fixture

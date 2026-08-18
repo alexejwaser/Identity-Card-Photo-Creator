@@ -54,9 +54,19 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**The suite is fully green** (140 passed). The long-standing `MainWindow._init_camera`
-errors are fixed: `_init_camera` belongs to `MainController`, so the `main_window`
-fixtures patch it there. Those 10 tests had never actually executed, so their fakes
+**The suite is fully green** (140 passed). Shared fixtures live in
+`tests/conftest.py`: `settings`, `DummyCamera` / `dummy_camera`, and `main_window`
+(which also sets `QT_QPA_PLATFORM=offscreen` before the first Qt import). Add new
+doubles there rather than in a test module — they used to be copy-pasted across
+`test_mainwindow_ui.py` / `test_photo_saving.py` / `test_settings_dialog.py`, and a
+second copy is a double that can silently rot while its file stays green. To vary
+one field, override the fixture by name and take the shared one as an argument
+(see `test_display_controller.py`'s `settings`). Note the two `FakeCapture` classes
+in `test_camera_enumerate.py` and `test_opencv_backend.py` are **not** duplicates —
+same name, genuinely different doubles; leave them alone.
+
+The long-standing `MainWindow._init_camera` errors are fixed: `_init_camera`
+belongs to `MainController`, so the `main_window` fixture patches it there. Those 10 tests had never actually executed, so their fakes
 had rotted — `ExcelReader.learners()` gained `skip_photographed`, `duplicate_ids()`
 appeared, the skip reason moved into `_ask_skip_reason`, and the code calls
 `controller.excel_running()` (patching `MainWindow._excel_running`, which is dead

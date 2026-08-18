@@ -1,87 +1,8 @@
-import os
-import copy
 import socket
-from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-import pytest
 from PySide6 import QtCore
 
-from app.core.config.settings import Settings, DEFAULTS
 from app.core.excel.reader import Learner
-from app.ui.main_window import MainWindow
-import app.core.controller as controller_module
-
-
-@pytest.fixture
-def settings(tmp_path):
-    data = copy.deepcopy(DEFAULTS)
-    data['ausgabeBasisPfad'] = tmp_path / 'out'
-    data['missedPath'] = tmp_path / 'missed.xlsx'
-    return Settings(
-        ausgabeBasisPfad=data['ausgabeBasisPfad'],
-        missedPath=data['missedPath'],
-        bild=data['bild'],
-        overlay=data['overlay'],
-        kamera=data['kamera'],
-        zip=data['zip'],
-        copyright=data['copyright'],
-        excelMapping=data['excelMapping'],
-    )
-
-
-class DummyCamera:
-    def __init__(self):
-        self.captured = []
-
-    def start_liveview(self):
-        pass
-
-    def stop_liveview(self):
-        pass
-
-    def capture(self, path):
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(b'data')
-        self.captured.append(p)
-
-
-@pytest.fixture
-def dummy_camera():
-    return DummyCamera()
-
-
-@pytest.fixture
-def main_window(qtbot, settings, dummy_camera, monkeypatch, tmp_path):
-    # _init_camera gehoert MainController, nicht MainWindow: das Fenster
-    # uebernimmt die Kamera, die der Controller gebaut hat.
-    monkeypatch.setattr(
-        controller_module.MainController, "_init_camera", lambda self: dummy_camera
-    )
-    # Sonst blockiert der modale Onboarding-Dialog die Fensterkonstruktion.
-    monkeypatch.setattr(MainWindow, "_maybe_show_onboarding", lambda self: None)
-    monkeypatch.setattr(controller_module, "class_output_dir", lambda base, loc, klass: tmp_path / f"{loc}_{klass}")
-    monkeypatch.setattr(controller_module, "new_learner_dir", lambda base, loc, klass: tmp_path / f"new_{loc}_{klass}")
-
-    def dummy_unique_file_path(directory, name):
-        directory.mkdir(parents=True, exist_ok=True)
-        return directory / name
-
-    monkeypatch.setattr(controller_module, "unique_file_path", dummy_unique_file_path)
-    monkeypatch.setattr(controller_module, "process_image", lambda *a, **kw: None)
-    monkeypatch.setattr(MainWindow, "_show_review", lambda self, path: True)
-    # Der Code fragt controller.excel_running(); MainWindow._excel_running
-    # ist toter Code. Ohne diesen Patch schlagen die Tests auf jedem
-    # Rechner fehl, auf dem gerade Excel offen ist.
-    monkeypatch.setattr(
-        controller_module.MainController, "excel_running", lambda self: False
-    )
-    monkeypatch.setattr(MainWindow, "_notify", lambda *a, **kw: None)
-    win = MainWindow(settings)
-    qtbot.addWidget(win)
-    return win
 
 
 def test_capture_flow(main_window, qtbot):
