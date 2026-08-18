@@ -10,8 +10,11 @@ import os
 import psutil
 
 from ..core.config.settings import Settings, CONFIG_DIR
+from ..core.config.settings_change import SettingsSnapshot, SettingsChange, diff_settings
 from ..core.controller import MainController
 from ..core.display import DisplayContext
+from ..core.test_mode import activate_test_mode
+from ..core.util.onboarding import should_show as onboarding_pending, mark_shown as mark_onboarding_shown
 from ..version import get_version
 from ..core.excel.reader import ExcelReader, Learner
 from ..core.excel.missed_writer import MissedWriter, MissedEntry
@@ -481,15 +484,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _activate_test_mode(self):
         """Generate a fresh randomized placeholder roster, load it as the active
         roster, and redirect photo/zip output to a dedicated Testdaten folder
-        for the rest of the session (session-only, not saved to settings.json)."""
-        from ..core.excel.test_data import generate_test_roster
-        test_dir = CONFIG_DIR / 'Testdaten'
-        roster_path = test_dir / 'Testroster.xlsx'
-        generate_test_roster(roster_path, self.settings.excelMapping.model_dump())
-        # Session-only redirect (not persisted) so test captures can never land
-        # in or overwrite the real output folder.
-        self.settings.ausgabeBasisPfad = test_dir / 'Ausgabe'
-        self.settings.neueLernendeBasisPfad = test_dir / 'Neue Lernende'
+        for the rest of the session (session-only, not saved to settings.json).
+        The roster generation and the redirect itself live in core
+        (app/core/test_mode.py); only the reload and the message stay here."""
+        roster_path = activate_test_mode(self.settings, CONFIG_DIR)
         self._load_excel_from_path(roster_path)
         self._notify(
             'Testmodus',
@@ -725,14 +723,15 @@ class MainWindow(QtWidgets.QMainWindow):
         OnboardingDialog(self).exec()
 
     def _maybe_show_onboarding(self):
-        marker = CONFIG_DIR / '.onboarded'
-        if marker.exists():
+        if not onboarding_pending(CONFIG_DIR):
             return
         self.show_onboarding()
-        try:
-            marker.touch()
-        except OSError:
-            pass
+        if not mark_onboarding_shown(CONFIG_DIR):
+            # Schreibgeschütztes Konfigurationsverzeichnis (z.B. portabler
+            # Betrieb von einem Netzlaufwerk): die Kurzanleitung erscheint dann
+            # beim nächsten Start erneut. Unschön, aber harmloser als ein
+            # Absturz direkt nach dem Willkommensdialog.
+            self.logger.warning('Onboarding-Markierung konnte nicht geschrieben werden')
 
     def _update_camera_banner(self):
         """Show a persistent warning if a real camera failed to open and the
@@ -1114,30 +1113,40 @@ class MainWindow(QtWidgets.QMainWindow):
         self.preview.timer.stop()
         if hasattr(self.controller.camera, 'stop_liveview'):
             self.controller.camera.stop_liveview()
+        # Vor der Dialogkonstruktion, nicht danach: heute liest der Konstruktor
+        # die Einstellungen nur, aber schriebe er je einen Wert zurück (etwa
+        # einen normalisierten Geräteindex beim Füllen der Kameraliste), stünde
+        # er schon im "Vorher" und die zugehörige Reaktion fiele stillschweigend
+        # aus.
+        before = SettingsSnapshot.capture(self.settings, self.controller.display.endpoint())
         dlg = SettingsDialog(
             self.settings, self, logger=self.logger.getChild('SettingsDialog'), reader=self.reader
         )
-        before_backend = self.settings.kamera.backend
-        before_rotation = self.settings.kamera.rotation
-        before_device = self.settings.kamera.deviceIndex
-        before_breite = self.settings.bild.breite
-        before_hoehe = self.settings.bild.hoehe
-        before_overlay = self.settings.overlay.image
-        before_display = self.controller.display.endpoint()
         accepted = dlg.exec() == QtWidgets.QDialog.Accepted
-        # Checked regardless of accept/reject: the dialog's "Als Standard
-        # speichern" button can persist camera settings mid-dialog, so
-        # self.settings may already reflect a change even if the operator
-        # ultimately cancels out of the rest of the form.
-        changed = (
-            self.settings.kamera.backend != before_backend
-            or self.settings.kamera.rotation != before_rotation
-            or self.settings.kamera.deviceIndex != before_device
-            or getattr(dlg, 'reconnect_requested', False)
+        # Erst vergleichen, dann handeln: restart_camera() kann über den
+        # Fallback in MainController._init_camera den deviceIndex zurück in die
+        # Einstellungen schreiben, und der Testmodus biegt die Ausgabepfade um.
+        # Wer während des Anwendens erneut vergliche, verglicht gegen bereits
+        # veränderte Werte. getattr() bleibt: ein Dialog-Double im Test trägt
+        # die beiden Flags nicht zwingend.
+        change = diff_settings(
+            before,
+            self.settings,
+            accepted=accepted,
+            reconnect_requested=getattr(dlg, 'reconnect_requested', False),
+            test_mode_requested=getattr(dlg, '_test_mode_requested', False),
         )
-        if changed:
-            # Delegate full camera restart to the controller so there is
-            # a single source of truth for camera initialisation.
+        self._apply_settings_change(change, before)
+
+    def _apply_settings_change(self, change: SettingsChange, before: SettingsSnapshot):
+        """Das *Wie* zu den Entscheidungen aus diff_settings().
+
+        Nur hier stehen Widget-Zugriffe und Texte für die Nutzerin; die
+        Reihenfolge ist Absicht und in den Kommentaren begründet.
+        """
+        if change.camera_restart:
+            # Der Neustart bleibt beim MainController: eine einzige Stelle, an
+            # der eine Kamera gebaut wird.
             try:
                 self.camera = self.controller.restart_camera()
             except Exception as e:
@@ -1146,18 +1155,26 @@ class MainWindow(QtWidgets.QMainWindow):
             self.preview.set_camera(self.camera)
             self._update_camera_banner()
         elif hasattr(self.controller.camera, 'start_liveview'):
+            # Nur im else-Zweig: restart_camera() startet das Liveview selbst,
+            # beides zusammen öffnete das Gerät zweimal.
             self.controller.camera.start_liveview()
-        if self.settings.bild.breite != before_breite or self.settings.bild.hoehe != before_hoehe:
+        if change.crop_changed:
             self.preview.set_crop_aspect((self.settings.bild.breite, self.settings.bild.hoehe))
-        if accepted and self.settings.overlay.image != before_overlay:
+        if change.overlay_changed:
             self.preview.set_overlay_image(self.settings.overlay.image)
+        # Vor dem Anzeige-Neustart: der kann synchron 'failed' melden und damit
+        # eine modale Box öffnen. Stünde die Vorschau dabei noch still, fröre
+        # das Livebild ein, solange die Meldung offen ist.
         self.preview.timer.start()
         # Port und Modus bestimmen den Socket, greifen also nur über einen
         # Neustart des Servers; Namensform, Anzahl und Hinweise holt der
         # 1-Hz-Timer von selbst nach.
-        self.controller.display.restart_if_endpoint_changed(before_display)
+        self.controller.display.restart_if_endpoint_changed(before.display)
         self._update_buttons()
-        if accepted and getattr(dlg, '_test_mode_requested', False):
+        # Zuletzt: der Testmodus lädt einen neuen Roster nach und stösst dabei
+        # _update_buttons() erneut an - er will eine fertig eingerichtete
+        # Kamera und eine laufende Vorschau vorfinden.
+        if change.test_mode:
             self._activate_test_mode()
 
     def _update_buttons(self):
