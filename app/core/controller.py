@@ -9,6 +9,7 @@ from .config.settings import Settings
 from .display import DisplayController
 from .camera import SimulatorCamera, GPhoto2Camera, make_webcam_camera, list_cameras
 from .excel.reader import ExcelReader, Learner
+from .identity import IdConflict, conflict_for, find_id_conflicts
 from .excel.missed_writer import MissedWriter, MissedEntry
 from .imaging.processor import process_image
 from .util.paths import class_output_dir, new_learner_dir, unique_file_path
@@ -28,6 +29,8 @@ class MainController:
         self.learners: List[Learner] = []
         self.current: int = 0
         self.current_classes: List[str] = []
+        # Dateinamen-Kollisionen der geladenen Klasse; siehe app/core/identity.py.
+        self.id_conflicts: List[IdConflict] = []
 
     # camera -----------------------------------------------------------------
     def _init_camera(self):
@@ -151,11 +154,22 @@ class MainController:
     ) -> List[Learner]:
         if not self.reader or not class_name:
             return []
+        # Kollisionen immer gegen die *vollstaendige* Klasse suchen, nicht gegen
+        # die Arbeitsliste: wer bereits fotografiert ist, faellt bei
+        # skip_photographed heraus, seine Datei liegt aber im Ausgabeordner und
+        # kollidiert trotzdem. Einmal hier berechnet statt bei jeder Aufnahme -
+        # es kostet sonst pro Foto einen Excel-Zugriff.
+        alle = self.reader.learners(location, class_name)
+        self.id_conflicts = find_id_conflicts(alle)
         self.learners = self.reader.learners(
             location, class_name, skip_photographed=skip_photographed
         )
         self.current = 0
         return self.learners
+
+    def id_conflict_for(self, learner) -> Optional[IdConflict]:
+        """Der Dateinamen-Konflikt dieser Lernenden - oder None."""
+        return conflict_for(learner, self.id_conflicts)
 
     # learner helpers --------------------------------------------------------
     def current_learner(self) -> Optional[Learner]:

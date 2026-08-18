@@ -54,7 +54,7 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**The suite is fully green** (140 passed). Shared fixtures live in
+**The suite is fully green** (170 passed). Shared fixtures live in
 `tests/conftest.py`: `settings`, `DummyCamera` / `dummy_camera`, and `main_window`
 (which also sets `QT_QPA_PLATFORM=offscreen` before the first Qt import). Add new
 doubles there rather than in a test module — they used to be copy-pasted across
@@ -68,7 +68,8 @@ same name, genuinely different doubles; leave them alone.
 The long-standing `MainWindow._init_camera` errors are fixed: `_init_camera`
 belongs to `MainController`, so the `main_window` fixture patches it there. Those 10 tests had never actually executed, so their fakes
 had rotted — `ExcelReader.learners()` gained `skip_photographed`, `duplicate_ids()`
-appeared, the skip reason moved into `_ask_skip_reason`, and the code calls
+appeared (and has since been removed — see **Identität** below), the skip reason
+moved into `_ask_skip_reason`, and the code calls
 `controller.excel_running()` (patching `MainWindow._excel_running`, which is dead
 code, silently disabled every capture on a machine with Excel open). The 4
 `test_camera_enumerate.py` cases now force the DirectShow-probing fallback via the
@@ -116,6 +117,34 @@ mw.MainWindow._maybe_show_onboarding = lambda self: None
   == "opencv"` means "webcam mode" (routed to DirectShow on Windows).
 - `app/__init__.py` — sets `OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS=0` before
   cv2 loads (legacy; harmless now that Windows capture bypasses OpenCV).
+
+### Identität: SchülerID → Dateiname (`app/core/identity.py`)
+
+**The filename IS the identity.** A photo is filed as `<schueler_id>.jpg` and
+that name is the only link between the image and the person — get it wrong and a
+face ends up on someone else's card, with no error anywhere.
+
+The trap: the name is not the ID, it's `sanitize_name(id)`, and that mapping is
+**not injective**. `12345`, `12345 `, ` 12345`, `12.345` and `12/345` all become
+`12345.jpg`; an ID of only non-ASCII characters becomes `.jpg`. `unique_file_path`
+then appends `_1`/`_2` so nothing is overwritten — which *looks* safe but means
+the filename is no longer an ID at all.
+
+The old `ExcelReader.duplicate_ids()` compared **raw** IDs and therefore missed
+exactly the cases where the conversion creates the collision. It was removed.
+`find_id_conflicts()` now groups by `storage_key()` — the same conversion the
+filename uses, deliberately shared so the check can't drift from what is stored.
+
+Two rules:
+- Conflicts are computed in `MainController.learners_for_class()` against the
+  **full** class, never the filtered working list: a learner dropped by
+  `skip_photographed` still has a file in the output folder and still collides.
+- A conflicted learner is **blocked** in `capture_photo()` *before* the camera
+  fires. Loud failure beats a silently misfiled photo; "Überspringen" still works.
+
+`sanitize_name` itself is deliberately NOT fixed — it has to defang umlauts and
+punctuation so Windows paths don't break, and losing information is inherent to
+that. `tests/test_identity.py` pins its current behaviour as characterization.
 
 ### UI
 - `app/main.py` — creates the QApplication, calls `apply_dark_theme(app)`,

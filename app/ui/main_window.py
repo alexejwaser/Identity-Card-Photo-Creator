@@ -553,18 +553,41 @@ class MainWindow(QtWidgets.QMainWindow):
         self.controller.learners_for_class(location, class_name, skip_photographed=skip_photographed)
         self._class_finished = False
 
-        # Warn about duplicate student IDs – they would cause silent file collisions.
-        dupes = self.reader.duplicate_ids(location, class_name)
-        if dupes:
-            self._notify(
-                'Doppelte SchülerIDs',
-                f'Achtung: Diese IDs kommen mehrfach vor: {", ".join(dupes)}\n'
-                'Bitte die Excel-Datei prüfen.',
-                level='warning',
-            )
+        # Kollidierende SchülerIDs: geprüft wird der *Dateiname*, nicht die
+        # rohe ID. '12.345' und '12345' sind verschiedene IDs, ergeben aber
+        # dieselbe Datei – früher fiel genau das durch die Prüfung.
+        self._warn_about_id_conflicts()
 
         self.show_next()
         self._update_buttons()
+
+    def _describe_id_conflict(self, conflict) -> str:
+        """Der deutsche Text zu einem Konflikt. Die Erkennung sitzt im Kern
+        (app/core/identity.py), formuliert wird hier."""
+        if conflict.unusable:
+            return (
+                f'Aus der ID "{conflict.ids[0]}" lässt sich kein Dateiname bilden '
+                '(es bleiben nur Sonderzeichen übrig).'
+            )
+        return (
+            f'Die IDs {", ".join(conflict.ids)} ergeben alle denselben Dateinamen '
+            f'"{conflict.key}.jpg".'
+        )
+
+    def _warn_about_id_conflicts(self):
+        conflicts = self.controller.id_conflicts
+        if not conflicts:
+            return
+        zeilen = '\n'.join(f'• {self._describe_id_conflict(c)}' for c in conflicts)
+        self._notify(
+            'SchülerIDs nicht eindeutig',
+            'Achtung – für diese Lernenden kann kein eindeutiges Foto abgelegt '
+            f'werden:\n\n{zeilen}\n\n'
+            'Diese Aufnahmen werden blockiert, bis die IDs in der Excel-Datei '
+            'eindeutig sind. Alle anderen Lernenden können normal fotografiert '
+            'werden.',
+            level='warning',
+        )
 
     def show_next(self):
         learner = self.controller.current_learner()
@@ -743,8 +766,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 level='warning',
             )
             return
-        self._set_busy(True)
         learner = self.controller.learners[self.controller.current]
+        # Vor der Aufnahme, nicht danach: eine blockierte Aufnahme soll die
+        # Kamera gar nicht erst auslösen. Lieber hier laut stehenbleiben als
+        # ein Foto abzulegen, das später der falschen Person zugeordnet wird –
+        # das merkt niemand, bis der Ausweis gedruckt ist.
+        conflict = self.controller.id_conflict_for(learner)
+        if conflict is not None:
+            self._notify(
+                'Aufnahme blockiert – SchülerID nicht eindeutig',
+                f'{learner.vorname} {learner.nachname} kann nicht fotografiert '
+                f'werden.\n\n{self._describe_id_conflict(conflict)}\n\n'
+                'Bitte die ID in der Excel-Datei korrigieren und die Klasse neu '
+                'laden. Mit "Überspringen" geht es vorerst weiter.',
+                level='error',
+            )
+            return
+        self._set_busy(True)
         location = self.cmb_location.currentText()
 
         # Pause the live-preview reads while the background task grabs the

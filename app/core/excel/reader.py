@@ -87,19 +87,6 @@ class ExcelReader:
         result.sort(key=lambda l: (l.nachname, l.vorname))
         return result
 
-    def duplicate_ids(self, location: str, class_name: str) -> List[str]:
-        """Return a list of student IDs that appear more than once in the class."""
-        all_learners = self.learners(location, class_name)
-        seen: set = set()
-        dupes: List[str] = []
-        for learner in all_learners:
-            sid = learner.schueler_id
-            if sid:
-                if sid in seen and sid not in dupes:
-                    dupes.append(sid)
-                seen.add(sid)
-        return dupes
-
     def mark_photographed(
         self,
         location: str,
