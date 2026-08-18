@@ -6,6 +6,7 @@ import psutil
 from PySide6 import QtCore
 
 from .config.settings import Settings
+from .display import DisplayController
 from .camera import SimulatorCamera, GPhoto2Camera, make_webcam_camera, list_cameras
 from .excel.reader import ExcelReader, Learner
 from .excel.missed_writer import MissedWriter, MissedEntry
@@ -21,6 +22,8 @@ class MainController:
         self.camera_fallback: bool = False
         self.camera_fallback_reason: str = ""
         self.camera = self._init_camera()
+        # Schlaeft, bis die GUI sie startet - siehe app/core/display/controller.py.
+        self.display = DisplayController(settings)
         self.reader: Optional[ExcelReader] = None
         self.learners: List[Learner] = []
         self.current: int = 0
