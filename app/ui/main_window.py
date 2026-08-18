@@ -11,7 +11,7 @@ import psutil
 
 from ..core.config.settings import Settings, CONFIG_DIR
 from ..core.controller import MainController
-from ..core.display import DisplayServer, build_snapshot
+from ..core.display import DisplayContext
 from ..version import get_version
 from ..core.excel.reader import ExcelReader, Learner
 from ..core.excel.missed_writer import MissedWriter, MissedEntry
@@ -52,10 +52,24 @@ class MainWindow(QtWidgets.QMainWindow):
         # immer erst auf Knopfdruck. _class_finished merkt sich, dass "Fertig"
         # gedrückt wurde: der Controller behält seinen Roster, sonst würde die
         # Anzeige draussen weiterhin die letzte Person aufrufen.
-        self._display_server = DisplayServer(self.logger.getChild('DisplayServer'))
         self._class_finished = False
         self._display_hint_shown = False
         self._setup_ui()
+        # Erst nach _setup_ui(): die Slots fassen Knopf und Statusleiste an, die
+        # es vorher noch gar nicht gibt. Den Lebenszyklus (Server, 1-Hz-Takt)
+        # besitzt der Controller – das Fenster liefert ihm nur den GUI-Zustand
+        # und übersetzt seine Signale in Text für die Nutzerin.
+        display = self.controller.display
+        display.set_context_provider(self._display_context)
+        display.started.connect(self._on_display_started)
+        display.stopped.connect(self._on_display_stopped)
+        display.failed.connect(self._on_display_failed)
+        # Zweite Absicherung neben closeEvent: wird das Fenster zerstört, ohne
+        # dass closeEvent lief, griffe der 1-Hz-Takt weiter über den Rückruf in
+        # abgeräumte Comboboxen. Die Ausnahme wäre zwar geloggt statt fatal,
+        # aber die Anzeige im Gang bliebe stehen. `display` (nicht `self`) im
+        # Closure, sonst hielte der Slot das tote Fenster am Leben.
+        self.destroyed.connect(lambda *_, d=display: d.set_context_provider(None))
         if hasattr(self.camera, "start_liveview"):
             self.camera.start_liveview()
         self._update_camera_banner()
@@ -187,15 +201,6 @@ class MainWindow(QtWidgets.QMainWindow):
         bottom_row.addWidget(self.btn_display)
         bottom_row.addStretch()
         self.controls.layout().addLayout(bottom_row)
-
-        # Sicherheitsnetz: veröffentlicht den Zustand im Sekundentakt neu, egal
-        # über welchen Codepfad er sich geändert hat. show_next() pusht zusätzlich
-        # sofort – der Timer garantiert nur, dass die Anzeige nie hängen bleibt
-        # (z.B. nach "Fertig" oder einem Standortwechsel, die show_next() nicht
-        # aufrufen). Läuft nur, solange der Server läuft.
-        self._display_timer = QtCore.QTimer(self)
-        self._display_timer.setInterval(1000)
-        self._display_timer.timeout.connect(self._publish_display)
 
         # Tooltips for keyboard shortcuts (cleaner than baking them into labels)
         self.btn_capture.setToolTip('Leertaste')
@@ -338,36 +343,34 @@ class MainWindow(QtWidgets.QMainWindow):
         msg_fn(self, title, message)
 
     # --- Wartezimmer-Anzeige (zweiter Bildschirm) ----------------------------
-    def _toggle_display_server(self):
-        if self._display_server.running:
-            self._stop_display_server()
-            return
+    def _display_context(self) -> DisplayContext:
+        """Der GUI-Zustand, aus dem der Controller seine Momentaufnahme baut.
 
-        port = self.settings.anzeige.port
-        local = self.settings.anzeige.modus == 'lokal'
-        host = (
-            DisplayServer.LOCAL_HOST if local else DisplayServer.NETWORK_HOST
+        Klasse und Standort stehen nur in den Comboboxen dieses Fensters, und
+        _jump_return/_class_finished sind Ablaufzustand der GUI – deshalb holt
+        der Controller sie über diesen Rückruf, statt selbst am Fenster zu
+        hängen.
+        """
+        return DisplayContext(
+            learners=self.controller.learners,
+            current=self.controller.current,
+            jump_return=getattr(self, '_jump_return', None),
+            klasse=self.cmb_class.currentText(),
+            standort=self.cmb_location.currentText(),
+            has_roster=self.controller.reader is not None,
+            class_finished=self._class_finished,
         )
-        try:
-            self._display_server.start(port, host=host)
-        except OSError as exc:
-            self.btn_display.setChecked(False)
-            self._notify(
-                'Anzeige konnte nicht gestartet werden',
-                f'Port {port} lässt sich nicht öffnen ({exc}).\n\n'
-                'Vermutlich belegt ein anderes Programm den Port. '
-                'In den Einstellungen lässt sich ein anderer Port wählen.',
-                level='warning',
-            )
-            return
 
+    def _toggle_display_server(self):
+        # Wrapper statt direkter Verbindung: clicked(bool) würde den
+        # Checked-Zustand als Argument an toggle() durchreichen.
+        self.controller.display.toggle()
+
+    def _on_display_started(self, local, urls):
         self.btn_display.setChecked(True)
         self.btn_display.setToolTip('Wartezimmer-Anzeige beenden')
-        self._publish_display()
-        self._display_timer.start()
         self._update_display_url()
 
-        urls = self._display_server.urls()
         if local:
             # Monitor hängt am Fotolaptop: die Seite gleich selbst aufmachen,
             # damit niemand eine Adresse abtippen muss.
@@ -393,19 +396,27 @@ class MainWindow(QtWidgets.QMainWindow):
                 'die Seite von aussen nicht erreichbar.',
             )
 
-    def _stop_display_server(self):
-        self._display_timer.stop()
-        self._display_server.stop()
+    def _on_display_stopped(self):
         self.btn_display.setChecked(False)
         self.btn_display.setToolTip('Wartezimmer-Anzeige starten (zweiter Bildschirm)')
         self.lbl_display_url.setVisible(False)
 
+    def _on_display_failed(self, port, message):
+        self.btn_display.setChecked(False)
+        self._notify(
+            'Anzeige konnte nicht gestartet werden',
+            f'Port {port} lässt sich nicht öffnen ({message}).\n\n'
+            'Vermutlich belegt ein anderes Programm den Port. '
+            'In den Einstellungen lässt sich ein anderer Port wählen.',
+            level='warning',
+        )
+
     def _update_display_url(self):
-        urls = self._display_server.urls()
+        urls = self.controller.display.urls()
         if not urls:
-            self.lbl_display_url.setText(f'Anzeige: Port {self._display_server.port}')
+            self.lbl_display_url.setText(f'Anzeige: Port {self.controller.display.port}')
             self.lbl_display_url.setToolTip('Keine Netzwerkadresse gefunden.')
-        elif self._display_server.local_only:
+        elif self.controller.display.local_only:
             self.lbl_display_url.setText(f'Anzeige (lokal): {urls[0]}')
             self.lbl_display_url.setToolTip(
                 'Nur auf diesem Rechner erreichbar – für einen Monitor am '
@@ -419,43 +430,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lbl_display_url.setVisible(True)
 
     def _copy_display_url(self, event):
-        urls = self._display_server.urls()
+        urls = self.controller.display.urls()
         if urls:
             QtWidgets.QApplication.clipboard().setText(urls[0])
             self.statusBar().showMessage(f'{urls[0]} kopiert', 2000)
-
-    def _publish_display(self):
-        """Schiebt den aktuellen Zustand an die Anzeige.
-
-        Läuft immer auf dem GUI-Thread (aus show_next() oder dem 1-Hz-Timer);
-        der Server serialisiert intern gegen seine Handler-Threads.
-
-        Fehler werden hier geloggt statt im Qt-Slot zu verpuffen: bliebe eine
-        Ausnahme unsichtbar, stünde die Anzeige draussen still, ohne dass
-        irgendwo eine Spur davon landet.
-        """
-        if not self._display_server.running:
-            return
-        anzeige = self.settings.anzeige
-        try:
-            self._display_server.publish(
-                build_snapshot(
-                    learners=self.controller.learners,
-                    current=self.controller.current,
-                    jump_return=getattr(self, '_jump_return', None),
-                    klasse=self.cmb_class.currentText(),
-                    standort=self.cmb_location.currentText(),
-                    has_roster=self.controller.reader is not None,
-                    class_finished=self._class_finished,
-                    count=anzeige.anzahlNaechste,
-                    full_names=anzeige.vollstaendigeNamen,
-                    hints=anzeige.hinweise,
-                    hint_interval=anzeige.hinweisIntervallSekunden,
-                    compact=anzeige.kompakt,
-                )
-            )
-        except Exception:
-            self.logger.exception('Anzeige-Zustand konnte nicht veröffentlicht werden')
 
     def load_excel(self):
         # Start the dialog in the folder of the last opened Excel file (remembered
@@ -604,7 +582,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.progress_bar.setFormat(f'{total}/{total}')
             self._populate_jump_menu()
             self._update_buttons()
-            self._publish_display()
+            self.controller.display.publish()
             return
 
         name_text = f"{learner.vorname} {learner.nachname} ({done + 1}/{total})"
@@ -634,7 +612,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._populate_jump_menu()
         self._update_buttons()
-        self._publish_display()
+        self.controller.display.publish()
 
     def _populate_jump_menu(self):
         menu = self.btn_jump_to.menu()
@@ -963,7 +941,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Der Controller behält seinen Roster – ohne dieses Flag würde die
         # Anzeige draussen weiter die zuletzt aufgerufene Person zeigen.
         self._class_finished = True
-        self._publish_display()
+        self.controller.display.publish()
         if zip_paths:
             text = f'ZIP-Archiv {zip_paths[0].name} wurde erstellt.'
         else:
@@ -1035,7 +1013,11 @@ class MainWindow(QtWidgets.QMainWindow):
         return result['ok']
 
     def closeEvent(self, event):
-        self._stop_display_server()
+        # Provider zuerst kappen: der Controller überlebt das Fenster (er
+        # gehört MainController), ein später Timer-Tick darf nicht mehr in
+        # abgebaute Widgets greifen.
+        self.controller.display.set_context_provider(None)
+        self.controller.display.stop()
         self.controller.camera.stop_liveview()
         super().closeEvent(event)
 
@@ -1055,7 +1037,7 @@ class MainWindow(QtWidgets.QMainWindow):
         before_breite = self.settings.bild.breite
         before_hoehe = self.settings.bild.hoehe
         before_overlay = self.settings.overlay.image
-        before_display = (self.settings.anzeige.port, self.settings.anzeige.modus)
+        before_display = self.controller.display.endpoint()
         accepted = dlg.exec() == QtWidgets.QDialog.Accepted
         # Checked regardless of accept/reject: the dialog's "Als Standard
         # speichern" button can persist camera settings mid-dialog, so
@@ -1087,10 +1069,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # Port und Modus bestimmen den Socket, greifen also nur über einen
         # Neustart des Servers; Namensform, Anzahl und Hinweise holt der
         # 1-Hz-Timer von selbst nach.
-        after_display = (self.settings.anzeige.port, self.settings.anzeige.modus)
-        if self._display_server.running and after_display != before_display:
-            self._stop_display_server()
-            self._toggle_display_server()
+        self.controller.display.restart_if_endpoint_changed(before_display)
         self._update_buttons()
         if accepted and getattr(dlg, '_test_mode_requested', False):
             self._activate_test_mode()

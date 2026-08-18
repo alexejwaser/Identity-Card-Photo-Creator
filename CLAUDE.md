@@ -54,7 +54,7 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**The suite is fully green** (85 passed). The long-standing `MainWindow._init_camera`
+**The suite is fully green** (140 passed). The long-standing `MainWindow._init_camera`
 errors are fixed: `_init_camera` belongs to `MainController`, so the `main_window`
 fixtures patch it there. Those 10 tests had never actually executed, so their fakes
 had rotted — `ExcelReader.learners()` gained `skip_photographed`, `duplicate_ids()`
@@ -173,6 +173,19 @@ snapshot, so flipping it applies live without a reload.
   Modelled on `directshow_backend.py`: bind happens on the **calling** thread so a
   busy port raises `OSError` synchronously into the GUI, and `stop()` joins with a
   bounded timeout. `publish()` bumps `rev` only on a real content change.
+- `controller.py` — `DisplayController`, the lifecycle owner (extracted from
+  `MainWindow` in #43). A `QObject` that holds the `DisplayServer` **and** the 1 Hz
+  republish timer, and lives on `MainController.display`. It never starts by
+  itself. The boundary is deliberate: the controller decides *when* and *where* to
+  bind (host from `settings.anzeige.modus`) and reports back via `started(local,
+  urls)` / `stopped()` / `failed(port, error)`; **every German string and every
+  widget touch stays in `MainWindow`**, which supplies the live UI state through a
+  `set_context_provider()` callback returning a `DisplayContext`. That callback is
+  why `klasse`/`standort` (combo boxes) and `_jump_return`/`_class_finished`
+  (window flow state) can stay in the window while the lifecycle moves out. Both
+  sides share one `Settings` object by reference, so a settings-dialog edit to
+  `vollstaendigeNamen`/`kompakt`/`hinweise` is picked up by the next timer tick
+  with no restart — only port and modus need `restart_if_endpoint_changed()`.
 
 **Never show stale names silently.** `publish()` refreshes a timestamp on *every*
 call — even when the content is unchanged and `rev` stays put — and `/api/state`
@@ -185,8 +198,8 @@ and an orphaned older instance can serve a frozen snapshot while the live app ke
 publishing — a busy port must fail loudly.
 
 **How stale data is prevented** (the whole point of the feature): `show_next()`
-pushes immediately, *and* a 1 Hz `QTimer` in `MainWindow` republishes the snapshot
-regardless of which code path changed state. Correctness therefore does not depend
+pushes immediately, *and* a 1 Hz `QTimer` inside `DisplayController` republishes the
+snapshot regardless of which code path changed state. Correctness therefore does not depend
 on a complete list of hooks — a newly added mutation path is covered for free.
 Two states are derived rather than signalled: an empty `cmb_class` means `idle`
 (this covers location changes and Excel reloads, which clear the combo), and
