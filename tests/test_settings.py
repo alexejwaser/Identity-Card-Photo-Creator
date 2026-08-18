@@ -63,3 +63,45 @@ def test_overlay_path_validation(tmp_path):
     cfg.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValidationError):
         Settings.load(cfg)
+
+
+def test_anzeige_hints_roundtrip(tmp_path):
+    cfg = tmp_path / "settings.json"
+    s = Settings.load(cfg)
+    s.anzeige.hinweise = ["Erster Hinweis", "Zweiter Hinweis"]
+    s.anzeige.hinweisIntervallSekunden = 25
+    s.save(cfg)
+
+    reloaded = Settings.load(cfg)
+    assert reloaded.anzeige.hinweise == ["Erster Hinweis", "Zweiter Hinweis"]
+    assert reloaded.anzeige.hinweisIntervallSekunden == 25
+
+
+def test_anzeige_defaults_apply_to_an_older_settings_file(tmp_path):
+    """Eine settings.json aus einer Version ohne Anzeige-Block muss weiterhin
+    laden - sonst startet die App nach einem Update nicht mehr."""
+    cfg = tmp_path / "settings.json"
+    data = {k: v for k, v in DEFAULTS.items() if k != "anzeige"}
+    cfg.write_text(json.dumps(data), encoding="utf-8")
+
+    settings = Settings.load(cfg)
+    assert settings.anzeige.port == 8080
+    assert settings.anzeige.hinweise  # Standardhinweis vorhanden
+
+
+def test_anzeige_modus_roundtrip(tmp_path):
+    cfg = tmp_path / "settings.json"
+    s = Settings.load(cfg)
+    assert s.anzeige.modus == "netzwerk"   # Standard bleibt das bisherige Verhalten
+    s.anzeige.modus = "lokal"
+    s.save(cfg)
+    assert Settings.load(cfg).anzeige.modus == "lokal"
+
+
+def test_anzeige_kompakt_roundtrip(tmp_path):
+    cfg = tmp_path / "settings.json"
+    s = Settings.load(cfg)
+    assert s.anzeige.kompakt is False   # Standard bleibt das grosse Layout
+    s.anzeige.kompakt = True
+    s.save(cfg)
+    assert Settings.load(cfg).anzeige.kompakt is True

@@ -54,11 +54,15 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**Pre-existing test failures (not yours to fix):** ~10 `MainWindow._init_camera`
-errors in `tests/test_photo_saving.py` + `tests/test_mainwindow_ui.py` (they
-reference an attribute that doesn't exist), plus 4 `tests/test_camera_enumerate.py`
-cases that fail on any machine with real cameras (they don't mock the MSMF
-enumeration path). Everything else is green — verify with a clean tree if unsure.
+**The suite is fully green** (85 passed). The long-standing `MainWindow._init_camera`
+errors are fixed: `_init_camera` belongs to `MainController`, so the `main_window`
+fixtures patch it there. Those 10 tests had never actually executed, so their fakes
+had rotted — `ExcelReader.learners()` gained `skip_photographed`, `duplicate_ids()`
+appeared, the skip reason moved into `_ask_skip_reason`, and the code calls
+`controller.excel_running()` (patching `MainWindow._excel_running`, which is dead
+code, silently disabled every capture on a machine with Excel open). The 4
+`test_camera_enumerate.py` cases now force the DirectShow-probing fallback via the
+`probing_path` fixture, so they no longer depend on the host having no camera.
 
 **Rendering the UI headless for a visual check:** offscreen renders show text as
 boxes (no Segoe UI in the offscreen platform) but layout/icons/colours are
@@ -137,6 +141,58 @@ mw.MainWindow._maybe_show_onboarding = lambda self: None
   camera via `make_webcam_camera`); persists `deviceName`/`devicePath`; rotation
   changes apply in place (no device reopen). `load_excel` confirms before
   swapping the active roster.
+
+### Wartezimmer-Anzeige (`app/core/display/`)
+
+A stdlib-only HTTP server that publishes "who is being photographed now + the
+next three" to a browser on a second device outside the photo room. Started only
+from `btn_display` in the sidebar's bottom row — never automatically. Two modes
+(`settings.anzeige.modus`): **netzwerk** binds `0.0.0.0` for a second device in the
+WLAN; **lokal** binds `127.0.0.1` for a monitor on HDMI and opens the page in the
+default browser itself. Local mode triggers no Windows firewall prompt and exposes
+nothing — `DisplayServer.urls()` returns only `localhost` there, because the LAN
+addresses would be dead ends. A separate `settings.anzeige.kompakt` switches the page
+layout (hints hidden, much larger names) for small displays; it rides in the
+snapshot, so flipping it applies live without a reload.
+
+- `state.py` — `build_snapshot(...)`, a **pure function** over
+  `(learners, current, jump_return, …)`. No Qt, no sockets, so every flow
+  (skip / retake / add person / jump / finish) is a plain unit test. Names are
+  abbreviated (`Anna M.`) unless `settings.anzeige.vollstaendigeNamen`; **student
+  IDs never enter the payload** — the page hangs in a public hallway.
+- `page.py` — the browser page as a Python string constant, same rationale as the
+  base64 icons: no extra PyInstaller `--add-data`, no external resources. Polls
+  `/api/state` once a second and re-renders only when `rev` changes. The visual
+  hierarchy is deliberately inverted: **the next person is the largest element**,
+  the one currently inside is small — nobody outside is waiting on them. Hints
+  rotate in a side panel with Apple-style dot indicators; a class-progress bar
+  sits above the footer. Every poll runs under an `AbortController` deadline —
+  without it a half-dead WLAN leaves the promise neither resolved nor rejected,
+  and the page silently freezes without ever reporting "no connection".
+- `server.py` — `DisplayServer` over `ThreadingHTTPServer` in a daemon thread.
+  Modelled on `directshow_backend.py`: bind happens on the **calling** thread so a
+  busy port raises `OSError` synchronously into the GUI, and `stop()` joins with a
+  bounded timeout. `publish()` bumps `rev` only on a real content change.
+
+**Never show stale names silently.** `publish()` refreshes a timestamp on *every*
+call — even when the content is unchanged and `rev` stays put — and `/api/state`
+reports it as `age_seconds`. Past ~6 s the page raises a banner instead of quietly
+calling the wrong name; past 15 s the server logs a warning, so a freeze leaves
+evidence in `logs/app.log`. Each server start also mints an `instance` id; if the
+page sees a new one it reloads itself. Related: `allow_reuse_address` is **off on
+Windows**, because there `SO_REUSEADDR` lets a *second* process bind the same port
+and an orphaned older instance can serve a frozen snapshot while the live app keeps
+publishing — a busy port must fail loudly.
+
+**How stale data is prevented** (the whole point of the feature): `show_next()`
+pushes immediately, *and* a 1 Hz `QTimer` in `MainWindow` republishes the snapshot
+regardless of which code path changed state. Correctness therefore does not depend
+on a complete list of hooks — a newly added mutation path is covered for free.
+Two states are derived rather than signalled: an empty `cmb_class` means `idle`
+(this covers location changes and Excel reloads, which clear the combo), and
+`_class_finished` means `done` (`finish_class()` deliberately leaves the roster in
+the controller). If you add a path that invalidates the roster, prefer extending
+those derivations over adding another publish call.
 
 ## Camera capture on Windows — the big gotcha
 

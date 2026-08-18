@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import os
 import sys
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
@@ -61,6 +61,11 @@ def _default_new_learner_path() -> Path:
 # First-run defaults (used when settings.json does not yet exist)
 # ---------------------------------------------------------------------------
 
+# Hinweistexte der Wartezimmer-Anzeige (ein Eintrag = eine Folie der Slideshow).
+DEFAULT_HINWEISE = [
+    'Die Fotos werden lediglich intern abgespeichert und nicht veröffentlicht.',
+]
+
 DEFAULTS = {
     'ausgabeBasisPfad': str(_default_output_path()),
     'neueLernendeBasisPfad': str(_default_new_learner_path()),
@@ -86,6 +91,15 @@ DEFAULTS = {
         'deviceIndex': 1,
         'deviceName': '',
         'devicePath': '',
+    },
+    'anzeige': {
+        'modus': 'netzwerk',
+        'port': 8080,
+        'kompakt': False,
+        'anzahlNaechste': 3,
+        'vollstaendigeNamen': False,
+        'hinweise': list(DEFAULT_HINWEISE),
+        'hinweisIntervallSekunden': 10,
     },
     'zip': {'maxAnzahl': None, 'maxGroesseMB': None},
     'copyright': {'artist': '', 'copyright': ''},
@@ -163,6 +177,27 @@ class KameraSettings(BaseModel):
     devicePath: str = ''
 
 
+class AnzeigeSettings(BaseModel):
+    """Wartezimmer-Anzeige auf einem zweiten Gerät (Browser im selben WLAN)."""
+
+    # 'netzwerk' = auf allen Interfaces erreichbar (zweites Gerät im WLAN),
+    # 'lokal'    = nur 127.0.0.1, für einen Monitor direkt am Fotolaptop. Lokal
+    # fragt Windows nicht nach der Firewall und nach aussen ist nichts offen.
+    modus: str = 'netzwerk'
+    port: int = 8080
+    # Kompakt = für kleine Displays (z.B. 7"): keine Hinweise, dafür deutlich
+    # grössere Namen und weniger Randabstand.
+    kompakt: bool = False
+    anzahlNaechste: int = 3
+    # Aus = "Anna M.". Die Seite hängt öffentlich im Gang, deshalb ist die
+    # abgekürzte Form der Standard; volle Namen sind eine bewusste Entscheidung.
+    vollstaendigeNamen: bool = False
+    # Hinweistexte, die rechts als Slideshow durchlaufen (ein Eintrag = eine
+    # Folie). Leere Liste = kein Hinweis-Panel.
+    hinweise: List[str] = Field(default_factory=lambda: list(DEFAULT_HINWEISE))
+    hinweisIntervallSekunden: int = 10
+
+
 class ZipSettings(BaseModel):
     maxAnzahl: Optional[int] = None
     # maxGroesseMB: reserviert für zukünftige grössenbasierte ZIP-Aufteilung
@@ -195,6 +230,7 @@ class Settings(BaseModel):
     bild: BildSettings = Field(default_factory=BildSettings)
     overlay: OverlaySettings = Field(default_factory=OverlaySettings)
     kamera: KameraSettings = Field(default_factory=KameraSettings)
+    anzeige: AnzeigeSettings = Field(default_factory=AnzeigeSettings)
     zip: ZipSettings = Field(default_factory=ZipSettings)
     copyright: CopyrightSettings = Field(default_factory=CopyrightSettings)
     excelMapping: ExcelMapping = Field(default_factory=ExcelMapping)

@@ -33,7 +33,19 @@ class SettingsDialog(QtWidgets.QDialog):
         # per backend) can be looked up from the combo's index selection.
         self._devices_by_index = {}
 
-        outer = QtWidgets.QVBoxLayout(self)
+        # Der Inhalt ist höher als ein Laptop-Bildschirm, deshalb steckt alles
+        # in einer Scroll-Fläche. Die OK/Abbrechen-Leiste sitzt bewusst
+        # ausserhalb davon, damit sie immer erreichbar bleibt.
+        dialog_layout = QtWidgets.QVBoxLayout(self)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        content = QtWidgets.QWidget()
+        scroll.setWidget(content)
+        dialog_layout.addWidget(scroll)
+        outer = QtWidgets.QVBoxLayout(content)
+        outer.setContentsMargins(0, 0, 0, 0)
 
         # ---- Camera settings group -----------------------------------
         cam_group = QtWidgets.QGroupBox('Kamera-Einstellungen')
@@ -228,6 +240,85 @@ class SettingsDialog(QtWidgets.QDialog):
                 self._mapping_widgets[key] = ed
                 form.addRow(label, ed)
 
+        # ---- Wartezimmer-Anzeige (aufklappbar) -----------------------
+        # Zugeklappt, weil diese Einstellungen selten angefasst werden und der
+        # Dialog sonst unnötig lang wird.
+        self.btn_anzeige_toggle = QtWidgets.QToolButton()
+        self.btn_anzeige_toggle.setText('Anzeige (zweiter Bildschirm)')
+        self.btn_anzeige_toggle.setCheckable(True)
+        self.btn_anzeige_toggle.setChecked(False)
+        self.btn_anzeige_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.btn_anzeige_toggle.setArrowType(QtCore.Qt.RightArrow)
+        self.btn_anzeige_toggle.setStyleSheet('QToolButton {border:none; font-weight:600;}')
+        outer.addWidget(self.btn_anzeige_toggle)
+
+        anzeige_body = QtWidgets.QWidget()
+        anzeige_body.setVisible(False)
+        anzeige_form = QtWidgets.QFormLayout(anzeige_body)
+        outer.addWidget(anzeige_body)
+
+        def _toggle_anzeige(checked):
+            anzeige_body.setVisible(checked)
+            self.btn_anzeige_toggle.setArrowType(
+                QtCore.Qt.DownArrow if checked else QtCore.Qt.RightArrow
+            )
+
+        self.btn_anzeige_toggle.toggled.connect(_toggle_anzeige)
+
+        anz = self.settings.anzeige
+        self.cmb_display_mode = QtWidgets.QComboBox()
+        self.cmb_display_mode.addItem('Netzwerk – zweites Gerät im WLAN', 'netzwerk')
+        self.cmb_display_mode.addItem('Lokal – Monitor an diesem Laptop', 'lokal')
+        self.cmb_display_mode.setCurrentIndex(1 if anz.modus == 'lokal' else 0)
+        self.cmb_display_mode.setToolTip(
+            'Netzwerk: die Anzeige wird im WLAN veröffentlicht und auf einem\n'
+            'zweiten Gerät im Browser geöffnet.\n\n'
+            'Lokal: die Anzeige ist nur auf diesem Rechner erreichbar und öffnet\n'
+            'sich beim Start selbst im Browser – für einen Monitor per HDMI.\n'
+            'Es wird nichts ins Netzwerk freigegeben.'
+        )
+        anzeige_form.addRow('Modus', self.cmb_display_mode)
+        self.cmb_display_layout = QtWidgets.QComboBox()
+        self.cmb_display_layout.addItem('Standard – mit Hinweisen', False)
+        self.cmb_display_layout.addItem('Kompakt – kleines Display, nur Namen', True)
+        self.cmb_display_layout.setCurrentIndex(1 if anz.kompakt else 0)
+        self.cmb_display_layout.setToolTip(
+            'Kompakt blendet die Hinweise aus und vergrössert die Namen deutlich –\n'
+            'gedacht für kleine Bildschirme (z.B. ein 7"-Mini-Display).'
+        )
+        anzeige_form.addRow('Layout', self.cmb_display_layout)
+        self.spin_display_port = QtWidgets.QSpinBox()
+        self.spin_display_port.setRange(1024, 65535)
+        self.spin_display_port.setValue(anz.port)
+        self.spin_display_port.setToolTip(
+            'Port, unter dem die Anzeige im Browser erreichbar ist.\n'
+            'Nur ändern, wenn der Standardport belegt ist.'
+        )
+        anzeige_form.addRow('Port', self.spin_display_port)
+        self.spin_display_count = QtWidgets.QSpinBox()
+        self.spin_display_count.setRange(1, 10)
+        self.spin_display_count.setValue(anz.anzahlNaechste)
+        anzeige_form.addRow('Anzahl nächster Personen', self.spin_display_count)
+        self.chk_display_full_names = QtWidgets.QCheckBox('Vollständige Namen anzeigen')
+        self.chk_display_full_names.setChecked(anz.vollstaendigeNamen)
+        self.chk_display_full_names.setToolTip(
+            'Aus: "Anna M." – die Anzeige hängt öffentlich im Gang.\n'
+            'Ein: voller Name.'
+        )
+        anzeige_form.addRow('', self.chk_display_full_names)
+        self.txt_display_hints = QtWidgets.QPlainTextEdit('\n'.join(anz.hinweise))
+        self.txt_display_hints.setFixedHeight(90)
+        self.txt_display_hints.setToolTip(
+            'Ein Hinweis pro Zeile. Mehrere Hinweise laufen als Slideshow durch.\n'
+            'Leer lassen blendet das Hinweis-Feld auf der Anzeige aus.'
+        )
+        anzeige_form.addRow('Hinweise (eine Zeile pro Hinweis)', self.txt_display_hints)
+        self.spin_display_hint_interval = QtWidgets.QSpinBox()
+        self.spin_display_hint_interval.setRange(2, 120)
+        self.spin_display_hint_interval.setSuffix(' s')
+        self.spin_display_hint_interval.setValue(anz.hinweisIntervallSekunden)
+        anzeige_form.addRow('Hinweis-Wechsel alle', self.spin_display_hint_interval)
+
         # ---- Test mode group -----------------------------------------
         test_group = QtWidgets.QGroupBox('Testmodus')
         test_form = QtWidgets.QFormLayout(test_group)
@@ -245,9 +336,30 @@ class SettingsDialog(QtWidgets.QDialog):
         self.buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
         )
-        form.addRow(self.buttons)
+        dialog_layout.addWidget(self.buttons)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+
+        # Gewünschte Grösse aus dem Inhalt ableiten (eine QScrollArea meldet die
+        # ihres Kindes nicht weiter, sonst öffnete der Dialog winzig) und auf den
+        # verfügbaren Bildschirm begrenzen; den Rest übernimmt die Scroll-Fläche.
+        # Ohne die Begrenzung ragt der Dialog auf 1080p unten heraus.
+        screen = self.screen() or QtGui.QGuiApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            margins = dialog_layout.contentsMargins()
+            chrome_w = margins.left() + margins.right()
+            chrome_h = (
+                margins.top()
+                + margins.bottom()
+                + dialog_layout.spacing()
+                + self.buttons.sizeHint().height()
+            )
+            wanted = content.sizeHint()
+            self.resize(
+                min(wanted.width() + chrome_w, available.width()),
+                min(wanted.height() + chrome_h, int(available.height() * 0.9)),
+            )
 
     # ------------------------------------------------------------------
     def _populate_devices(self):
@@ -428,6 +540,19 @@ class SettingsDialog(QtWidgets.QDialog):
             fotografiert=_column_letter('fotografiert', 'E'),
             aufnahmedatum=_column_letter('aufnahmedatum', 'F'),
             grund=_column_letter('grund', 'G'),
+        )
+        self.settings.anzeige.modus = self.cmb_display_mode.currentData()
+        self.settings.anzeige.kompakt = bool(self.cmb_display_layout.currentData())
+        self.settings.anzeige.port = self.spin_display_port.value()
+        self.settings.anzeige.anzahlNaechste = self.spin_display_count.value()
+        self.settings.anzeige.vollstaendigeNamen = self.chk_display_full_names.isChecked()
+        self.settings.anzeige.hinweise = [
+            line.strip()
+            for line in self.txt_display_hints.toPlainText().splitlines()
+            if line.strip()
+        ]
+        self.settings.anzeige.hinweisIntervallSekunden = (
+            self.spin_display_hint_interval.value()
         )
         self.settings.overlay.image = Path(self.overlay_path) if self.overlay_path else None
         self.settings.ausgabeBasisPfad = Path(self.output_dir)

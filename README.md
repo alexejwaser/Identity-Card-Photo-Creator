@@ -10,6 +10,7 @@ Desktop-App zur schnellen Erstellung von Portraitfotos für Klassen und Gruppen,
 - Live-Vorschau mit konfigurierbarem Overlay, Kamera-Rotation und Bildausschnitt passend zur Zielauflösung
 - Kamera-Auswahl, Auflösung und Vorschau direkt in den Einstellungen konfigurierbar
 - Testmodus: erzeugt auf Knopfdruck eine zufällige Platzhalter-Excel-Datei, um den kompletten Ablauf ohne echte Daten zu testen
+- Wartezimmer-Anzeige: zeigt auf einem zweiten Gerät im Browser, wer gerade fotografiert wird und wer als Nächstes drankommt
 - Automatische ZIP-Bündelung der Fotos pro Klasse
 - Unterstützung für USB-Webcam (OpenCV), DSLR via `gphoto2`, oder Simulator-Modus (kein Kamera-Hardware nötig)
 
@@ -44,6 +45,22 @@ Die virtuelle Umgebung landet in `.venv/` im Projektordner (via `.gitignore` aus
 python -m app.main
 ```
 Beim Abschluss einer Klasse werden alle Fotos automatisch zu einem ZIP-Archiv zusammengefasst und der Zielordner geöffnet.
+
+### Wartezimmer-Anzeige (zweiter Bildschirm)
+
+Der Bildschirm-Knopf unten links in der Seitenleiste startet die Anzeige. Sie zeigt die aktuelle Person und die nächsten drei und aktualisiert sich selbst; mit F11 in den Vollbildmodus. In den Einstellungen unter **Anzeige (zweiter Bildschirm)** gibt es dafür zwei Modi:
+
+**Lokal** – für einen externen Monitor per HDMI am Fotolaptop. Die Anzeige öffnet sich beim Start automatisch im Browser; Fenster auf den zweiten Bildschirm ziehen, F11. Es wird nichts ins Netzwerk freigegeben, Windows fragt nicht nach der Firewall.
+
+**Netzwerk** – für ein zweites Gerät im selben WLAN. Die angezeigte Adresse (z. B. `http://192.168.1.42:8080`) dort im Browser öffnen.
+
+Dazu ein **Layout**-Schalter: *Standard* zeigt rechts die Hinweise, *Kompakt* blendet sie aus und vergrössert die Namen deutlich – gedacht für kleine Bildschirme wie ein 7"-Mini-Display.
+
+- Beide Geräte müssen im selben WLAN sein. Fragt Windows beim ersten Start nach der Firewall, den Zugriff für **private Netzwerke** erlauben.
+- Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port, Anzahl der angezeigten Personen sowie die Hinweistexte lassen sich in den Einstellungen unter **Anzeige (zweiter Bildschirm)** umstellen.
+- Mehrere Hinweise (ein Hinweis pro Zeile) laufen auf der Seite als Slideshow durch.
+- Verliert die Seite den Kontakt zur App, meldet sie das selbst („Keine Verbindung zur App") statt weiter alte Namen aufzurufen.
+- Der Server läuft nur, solange er eingeschaltet ist, und startet nach einem Neustart der App nicht von selbst.
 
 ## Tastenkürzel
 | Taste | Aktion |

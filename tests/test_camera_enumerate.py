@@ -1,5 +1,7 @@
 """Tests for camera device enumeration."""
 
+import pytest
+
 from app.core.camera import enumerate as cam_enum
 from app.core.camera.enumerate import list_cameras, CameraDevice, resolve_backend_index
 
@@ -20,7 +22,18 @@ class FakeCapture:
         pass
 
 
-def test_list_cameras_generic_labels(monkeypatch):
+@pytest.fixture
+def probing_path(monkeypatch):
+    """Force list_cameras() down the DirectShow-probing fallback.
+
+    On Windows list_cameras() short-circuits through Media Foundation
+    (_enumerate_via_cv2ec), so without this the fakes below are never reached
+    and the tests fail on any machine that actually has a camera.
+    """
+    monkeypatch.setattr(cam_enum, "_enumerate_via_cv2ec", lambda backend: [])
+
+
+def test_list_cameras_generic_labels(probing_path, monkeypatch):
     monkeypatch.setattr(cam_enum.cv2, "VideoCapture", FakeCapture)
     monkeypatch.setattr(cam_enum, "_windows_device_names", lambda: None)
 
@@ -32,7 +45,7 @@ def test_list_cameras_generic_labels(monkeypatch):
     assert devices[1].name == "Kamera 2"
 
 
-def test_list_cameras_windows_names(monkeypatch):
+def test_list_cameras_windows_names(probing_path, monkeypatch):
     monkeypatch.setattr(cam_enum.cv2, "VideoCapture", FakeCapture)
     monkeypatch.setattr(
         cam_enum,
@@ -47,7 +60,7 @@ def test_list_cameras_windows_names(monkeypatch):
     assert devices[1].name == "Canon EOS Webcam"
 
 
-def test_list_cameras_names_shorter_than_index(monkeypatch):
+def test_list_cameras_names_shorter_than_index(probing_path, monkeypatch):
     """Falls back to a generic label if the pygrabber name list is shorter than
     the probed index (avoids IndexError)."""
     monkeypatch.setattr(cam_enum.cv2, "VideoCapture", FakeCapture)
@@ -59,7 +72,7 @@ def test_list_cameras_names_shorter_than_index(monkeypatch):
     assert devices[1].name == "Kamera 2"
 
 
-def test_list_cameras_empty(monkeypatch):
+def test_list_cameras_empty(probing_path, monkeypatch):
     class NoneOpen(FakeCapture):
         opened_indices = set()
 

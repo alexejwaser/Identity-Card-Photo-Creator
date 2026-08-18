@@ -54,7 +54,13 @@ def dummy_camera():
 
 @pytest.fixture
 def main_window(qtbot, settings, dummy_camera, monkeypatch, tmp_path):
-    monkeypatch.setattr(MainWindow, "_init_camera", lambda self: dummy_camera)
+    # _init_camera gehoert MainController, nicht MainWindow: das Fenster
+    # uebernimmt die Kamera, die der Controller gebaut hat.
+    monkeypatch.setattr(
+        controller_module.MainController, "_init_camera", lambda self: dummy_camera
+    )
+    # Sonst blockiert der modale Onboarding-Dialog die Fensterkonstruktion.
+    monkeypatch.setattr(MainWindow, "_maybe_show_onboarding", lambda self: None)
     monkeypatch.setattr(controller_module, "class_output_dir", lambda base, loc, klass: tmp_path / f"{loc}_{klass}")
     monkeypatch.setattr(controller_module, "new_learner_dir", lambda base, loc, klass: tmp_path / f"new_{loc}_{klass}")
 
@@ -65,7 +71,12 @@ def main_window(qtbot, settings, dummy_camera, monkeypatch, tmp_path):
     monkeypatch.setattr(controller_module, "unique_file_path", dummy_unique_file_path)
     monkeypatch.setattr(controller_module, "process_image", lambda *a, **kw: None)
     monkeypatch.setattr(MainWindow, "_show_review", lambda self, path: True)
-    monkeypatch.setattr(MainWindow, "_excel_running", lambda self: False)
+    # Der Code fragt controller.excel_running(); MainWindow._excel_running
+    # ist toter Code. Ohne diesen Patch schlagen die Tests auf jedem
+    # Rechner fehl, auf dem gerade Excel offen ist.
+    monkeypatch.setattr(
+        controller_module.MainController, "excel_running", lambda self: False
+    )
     monkeypatch.setattr(MainWindow, "_notify", lambda *a, **kw: None)
     win = MainWindow(settings)
     qtbot.addWidget(win)
@@ -87,8 +98,11 @@ def test_capture_flow(main_window, qtbot):
         def classes_for_location(self, location):
             return ["Class1"]
 
-        def learners(self, location, class_name):
+        def learners(self, location, class_name, skip_photographed=False):
             return self._learners
+
+        def duplicate_ids(self, location, class_name):
+            return []
 
         def mark_photographed(self, location, row, photographed, date):
             self.marked.append((location, row, photographed, date))
@@ -138,8 +152,11 @@ def test_jump_to_person(main_window, qtbot):
         def classes_for_location(self, location):
             return ["Class1"]
 
-        def learners(self, location, class_name):
+        def learners(self, location, class_name, skip_photographed=False):
             return self._learners
+
+        def duplicate_ids(self, location, class_name):
+            return []
 
         def mark_photographed(self, location, row, photographed, date):
             pass
@@ -167,8 +184,11 @@ def test_search_button_enabled_after_loading_classes(main_window, qtbot):
         def classes_for_location(self, location):
             return ["Class1"]
 
-        def learners(self, location, class_name):
+        def learners(self, location, class_name, skip_photographed=False):
             return [learner1]
+
+        def duplicate_ids(self, location, class_name):
+            return []
 
     reader = FakeReader()
     win = main_window
