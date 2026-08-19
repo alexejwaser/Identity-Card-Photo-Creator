@@ -320,3 +320,50 @@ _Questions this graph is uniquely positioned to answer:_
   _`OpenCVCamera` has 4 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `app.version.__version__`, `app/main.py (entry point)`, `app/ui/widgets/control_panel.ui` to the rest of the system?**
   _15 weakly-connected nodes found - possible documentation gaps or missing edges._
+
+---
+
+<!-- HANDGESCHRIEBEN. Alles darüber erzeugt graphify neu; dieser Abschnitt wird
+     beim nächsten `--update` überschrieben. Die dauerhafte Fassung steht in
+     CLAUDE.md unter "Was die Zentralität von DisplayController bedeutet". -->
+
+## Nachgetragen: warum `DisplayController` so zentral ist (2026-08-19)
+
+Der Bericht listet `DisplayController` mit der höchsten Betweenness des Graphen
+(0.135, knapp vor `MainWindow` mit 0.134) und fragt oben, warum. Nachgetragen,
+weil die Antwort das Gegenteil der üblichen Lesart ist.
+
+**Es ist keine Reichweite, sondern Unersetzlichkeit.** `DisplayController` hat
+28 Kanten, `MainWindow` hat 58 — also weniger als die Hälfte. Nur 12 dieser 28
+verlassen die eigene Community, und sie landen genau dort, wo die Naht aus #43
+gezogen wurde:
+
+- `references DisplayServer` (der Server darunter)
+- `calls build_snapshot()` (die reine Funktion daneben)
+- `references MainController` / `calls __init__` (der Besitzer darüber)
+- `shares_data_with MainWindow` + `set_context_provider()` (der Rückkanal zur GUI)
+
+Sonst nichts. Eine schmale Schnittstelle, die zufällig zwischen vier Subsystemen
+sitzt, die sonst nie miteinander sprechen.
+
+**Der Test dazu.** Entfernt man den Knoten aus der Hauptkomponente (943 Knoten),
+fallen 18 Knoten heraus — bei `MainWindow` nur 11. Halber Grad, mehr
+struktureller Schaden. Die 18 sind ausnahmslos die eigenen Methoden des
+Controllers: `publish()`, `stop()`, `restart_if_endpoint_changed()`,
+`endpoint()`, `urls()`, `running()`, `port()`, `local_only()`. Nichts sonst
+erreicht sie. `MainWindow` ruft die Klasse, und die Klasse allein erreicht ihr
+Innenleben.
+
+**Wie das zu lesen ist.** Hohe Zentralität heisst hier *nicht*, dass ein neuer
+Gott-Knoten entstanden ist. Vor #43 lag dieser Lebenszyklus als lose Methoden im
+`MainWindow`: von überall erreichbar und von nirgends testbar. Jetzt ist es eine
+Tür mit genau einem Türsteher — deshalb isoliert das Entfernen des Türstehers den
+Raum, und deshalb ist die Betweenness trotz bescheidenem Grad hoch.
+`MainWindow`s 58 Kanten sind der umgekehrte Fall: viel Grad, redundante Pfade,
+wenig strukturelle Notwendigkeit pro Kante.
+
+**Messhinweis für den nächsten, der das nachrechnet:** der Graph zerfällt schon
+ohne jeden Eingriff in 17 Komponenten (grösste: 943 Knoten). Wer `remove_node`
+auf dem *ganzen* Graphen rechnet, zählt diese vorbestehenden Inseln als Schaden
+mit und bekommt viel zu grosse Zahlen heraus. Immer gegen die Hauptkomponente
+messen.

@@ -124,6 +124,31 @@ mw.MainWindow._maybe_show_onboarding = lambda self: None
 - `app/__init__.py` — sets `OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS=0` before
   cv2 loads (legacy; harmless now that Windows capture bypasses OpenCV).
 
+### Was die Zentralität von `DisplayController` bedeutet
+
+The knowledge graph (`graphify-out/`) reports `DisplayController` with the
+**highest betweenness in the codebase** (0.135, just above `MainWindow` at
+0.134). Read that as confirmation, not as a warning — it is the expected
+signature of the #43 extraction, and the reasoning is worth keeping because the
+naive reading ("new god node, break it up") is exactly wrong.
+
+It is not reach, it is irreplaceability. `DisplayController` has **28 edges to
+`MainWindow`'s 58** — under half. Only 12 leave its own community, and they land
+precisely on the #43 seam: `DisplayServer` below it, `build_snapshot()` beside
+it, `MainController` above it, and `MainWindow` via `set_context_provider()`.
+Nothing else. Remove the node from the graph's main component and **18 nodes
+strand, versus 11 for `MainWindow`** — half the degree, more structural damage.
+All 18 are its own methods (`publish`, `stop`, `restart_if_endpoint_changed`,
+`endpoint`, `urls`, …): nothing else reaches them. That is the point. Before #43
+this lifecycle sat in `MainWindow` as loose methods — reachable from everywhere,
+testable from nowhere. `MainWindow`'s 58 edges are the opposite shape: high
+degree, redundant paths, little structural necessity per edge.
+
+If you recompute this: the graph already splits into **17 components** with no
+intervention (largest 943 nodes). Running `remove_node` against the *whole*
+graph counts those pre-existing islands as damage and inflates the numbers badly
+— always measure against the main component.
+
 ### Identität: SchülerID → Dateiname (`app/core/identity.py`)
 
 **The filename IS the identity.** A photo is filed as `<schueler_id>.jpg` and
