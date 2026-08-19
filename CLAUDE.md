@@ -54,10 +54,16 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**The suite is fully green** (181 passed). Shared fixtures live in
-`tests/conftest.py`: `settings`, `DummyCamera` / `dummy_camera`, and `main_window`
-(which also sets `QT_QPA_PLATFORM=offscreen` before the first Qt import). Add new
-doubles there rather than in a test module — they used to be copy-pasted across
+**The suite is fully green** (244 passed). Shared fixtures live in
+`tests/conftest.py`: `settings`, `DummyCamera` / `dummy_camera`, and
+`main_window_factory` / `main_window` (which also sets `QT_QPA_PLATFORM=offscreen`
+before the first Qt import). The factory exists for one reason: `main_window`
+patches `_maybe_show_onboarding` away (the modal dialog would block construction),
+so `main_window_factory(onboarding=True)` is the only way to exercise that path —
+and it additionally needs `app.ui.main_window.CONFIG_DIR` pointed at `tmp_path`
+and `MainWindow.show_onboarding` replaced, or the first such test writes
+`.onboarded` into the session config dir and every later one passes vacuously.
+Add new doubles there rather than in a test module — they used to be copy-pasted across
 `test_mainwindow_ui.py` / `test_photo_saving.py` / `test_settings_dialog.py`, and a
 second copy is a double that can silently rot while its file stays green. To vary
 one field, override the fixture by name and take the shared one as an argument
@@ -187,6 +193,39 @@ that. `tests/test_identity.py` pins its current behaviour as characterization.
   version/author/GitHub widgets. The photo review dialog (`_show_review`) keeps
   the photo on Space **and Enter** (autoDefault disabled so Enter doesn't hit the
   focused "Erneut fotografieren" button); Esc retakes.
+- **Dialog wiring (#46).** `open_settings()` is a two-liner over
+  `app/core/config/settings_change.py`: it captures a `SettingsSnapshot` before
+  `dlg.exec()` and asks `diff_settings()` for a `SettingsChange` afterwards;
+  `_apply_settings_change()` then holds *every* widget touch and German string.
+  Deliberately a **pure function**, not a `QObject` with signals like #43's
+  `DisplayController` — a before/after comparison is a computation with exactly
+  one synchronous caller, so correctness must not depend on signal connect order,
+  and a test can assert the decision instead of "a signal fired". Three rules the
+  refactor encodes, all easy to "clean up" by mistake:
+  (1) `SettingsSnapshot.capture()` copies **primitives**; holding
+  `settings.kamera` would compare it against itself (the dialog mutates the same
+  `Settings` object) and no camera change would ever be noticed;
+  (2) camera and crop changes count **even when the dialog was cancelled**,
+  because "Als Standard speichern" persists mid-dialog — overlay and test mode
+  count only on accept. That asymmetry is intended;
+  (3) diff **once, up front**: `restart_camera()` can write `deviceIndex` back
+  into settings and test mode rewrites the output paths, so re-comparing while
+  applying compares against already-changed values.
+  Ordering inside `_apply_settings_change` is load-bearing: `start_liveview()`
+  only in the `elif` (`restart_camera()` starts it itself — both would open the
+  device twice), `preview.timer.start()` **before** the display restart (which can
+  raise a modal box and would otherwise freeze the live view behind it), and test
+  mode last (it reloads the roster and wants a settled camera).
+- `app/core/test_mode.py` — roster generation + the session-only output redirect.
+  It **never** calls `settings.save()`: test captures must not be able to land in
+  the real output folder, nor overwrite the operator's real paths. Lives in
+  `core/` and not `core/config/` so `config` stays a leaf.
+- `app/core/util/onboarding.py` — the `.onboarded` marker decision (show once,
+  ever). Takes `config_dir` as an **argument**, not via import, so tests can't
+  poison each other through the session-wide `CONFIG_DIR`.
+- `search_class()` stays in `MainWindow` on purpose: `ClassSearchDialog._resolve()`
+  already owns the fuzzy matching, so a controller would be indirection with no
+  logic in it.
 - `app/ui/widgets/live_view_widget.py` — `QTimer`-driven preview; fetches frames
   on a `QtConcurrent` worker thread with an in-flight guard; shows "Kamera wird
   geladen…" on read errors.

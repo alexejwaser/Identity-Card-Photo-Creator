@@ -78,14 +78,22 @@ def dummy_camera():
 
 
 @pytest.fixture
-def main_window(qtbot, settings, dummy_camera, monkeypatch, tmp_path):
+def main_window_factory(qtbot, settings, dummy_camera, monkeypatch, tmp_path):
+    """Baut ein MainWindow; `onboarding=True` laesst den Onboarding-Pfad laufen.
+
+    Fabrik statt zweiter Fixture, weil sonst saemtliche Doubles doppelt
+    stuenden - genau das, was #44 aufgeraeumt hat. Das Onboarding ist der
+    einzige Unterschied und deshalb der einzige Schalter: der modale Dialog
+    blockiert sonst die Fensterkonstruktion, weshalb er hier normalerweise
+    weggepatcht wird. Wer ihn wirklich testen will (test_onboarding.py), muss
+    zusaetzlich `MainWindow.show_onboarding` ersetzen - `exec()` auf einem
+    modalen Dialog haengt im Test fuer immer.
+    """
     # _init_camera gehoert MainController, nicht MainWindow: das Fenster
     # uebernimmt die Kamera, die der Controller gebaut hat.
     monkeypatch.setattr(
         controller_module.MainController, "_init_camera", lambda self: dummy_camera
     )
-    # Sonst blockiert der modale Onboarding-Dialog die Fensterkonstruktion.
-    monkeypatch.setattr(MainWindow, "_maybe_show_onboarding", lambda self: None)
     monkeypatch.setattr(
         controller_module, "class_output_dir", lambda base, loc, klass: tmp_path / f"{loc}_{klass}"
     )
@@ -115,6 +123,17 @@ def main_window(qtbot, settings, dummy_camera, monkeypatch, tmp_path):
     # den Dialog selbst pruefen will, ersetzt ihn im Test (siehe
     # test_overwrite_prompt.py).
     monkeypatch.setattr(MainWindow, "_ask_overwrite", lambda self, learner, location: False)
-    win = MainWindow(settings)
-    qtbot.addWidget(win)
-    return win
+
+    def build(*, onboarding=False):
+        if not onboarding:
+            monkeypatch.setattr(MainWindow, "_maybe_show_onboarding", lambda self: None)
+        win = MainWindow(settings)
+        qtbot.addWidget(win)
+        return win
+
+    return build
+
+
+@pytest.fixture
+def main_window(main_window_factory):
+    return main_window_factory()
