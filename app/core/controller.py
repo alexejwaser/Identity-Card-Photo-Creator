@@ -9,9 +9,15 @@ from .config.settings import Settings
 from .display import DisplayController
 from .camera import SimulatorCamera, GPhoto2Camera, make_webcam_camera, list_cameras
 from .excel.reader import ExcelReader, Learner
+from .identity import IdConflict, conflict_for, find_id_conflicts
 from .excel.missed_writer import MissedWriter, MissedEntry
 from .imaging.processor import process_image
-from .util.paths import class_output_dir, new_learner_dir, unique_file_path
+from .util.paths import (
+    class_output_dir,
+    new_learner_dir,
+    target_file_path,
+    unique_file_path,
+)
 
 
 class MainController:
@@ -28,6 +34,8 @@ class MainController:
         self.learners: List[Learner] = []
         self.current: int = 0
         self.current_classes: List[str] = []
+        # Dateinamen-Kollisionen der geladenen Klasse; siehe app/core/identity.py.
+        self.id_conflicts: List[IdConflict] = []
 
     # camera -----------------------------------------------------------------
     def _init_camera(self):
@@ -151,11 +159,22 @@ class MainController:
     ) -> List[Learner]:
         if not self.reader or not class_name:
             return []
+        # Kollisionen immer gegen die *vollstaendige* Klasse suchen, nicht gegen
+        # die Arbeitsliste: wer bereits fotografiert ist, faellt bei
+        # skip_photographed heraus, seine Datei liegt aber im Ausgabeordner und
+        # kollidiert trotzdem. Einmal hier berechnet statt bei jeder Aufnahme -
+        # es kostet sonst pro Foto einen Excel-Zugriff.
+        alle = self.reader.learners(location, class_name)
+        self.id_conflicts = find_id_conflicts(alle)
         self.learners = self.reader.learners(
             location, class_name, skip_photographed=skip_photographed
         )
         self.current = 0
         return self.learners
+
+    def id_conflict_for(self, learner) -> Optional[IdConflict]:
+        """Der Dateinamen-Konflikt dieser Lernenden - oder None."""
+        return conflict_for(learner, self.id_conflicts)
 
     # learner helpers --------------------------------------------------------
     def current_learner(self) -> Optional[Learner]:
@@ -184,13 +203,31 @@ class MainController:
                 return True
         return False
 
-    def capture(self, learner: Learner, location: str) -> Path:
+    def planned_photo_path(self, learner: Learner, location: str) -> Path:
+        """Wohin das Foto ginge, wenn nichts im Weg stuende.
+
+        Getrennt von ``capture``, damit die GUI *vor* dem Ausloesen fragen kann,
+        ob eine bereits vorhandene Datei ueberschrieben werden soll. Ohne diese
+        Trennung haengt ``unique_file_path`` stillschweigend ein ``_1`` an - und
+        ein so benanntes Foto laesst sich spaeter keiner Person mehr zuordnen.
+        """
         if learner.is_new:
             out_dir = new_learner_dir(self.settings.neueLernendeBasisPfad, location, learner.klasse)
-            raw_path = unique_file_path(out_dir, f"{learner.vorname}_{learner.nachname}.jpg")
+            name = f"{learner.vorname}_{learner.nachname}.jpg"
         else:
             out_dir = class_output_dir(self.settings.ausgabeBasisPfad, location, learner.klasse)
-            raw_path = unique_file_path(out_dir, f"{learner.schueler_id}.jpg")
+            name = f"{learner.schueler_id}.jpg"
+        return target_file_path(out_dir, name)
+
+    def capture(self, learner: Learner, location: str, overwrite: bool = False) -> Path:
+        planned = self.planned_photo_path(learner, location)
+        if overwrite:
+            # Bewusst der ungeaenderte Zielpfad: die Entscheidung, eine
+            # vorhandene Datei zu ersetzen, hat die Operatorin schon getroffen.
+            planned.parent.mkdir(parents=True, exist_ok=True)
+            raw_path = planned
+        else:
+            raw_path = unique_file_path(planned.parent, planned.name)
         self.camera.capture(raw_path)
         aspect = getattr(self.settings.bild, "seitenverhaeltnis", (3, 4))
         process_image(
