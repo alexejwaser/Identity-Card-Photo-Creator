@@ -39,16 +39,35 @@ def new_learner_dir(base: Union[str, Path], location: str, class_name: str) -> P
     return class_output_dir(base, location, class_name)
 
 
+def target_file_path(directory: Union[str, Path], filename: str) -> Path:
+    """Return the sanitized path for *filename* – *without* any unique suffix.
+
+    This is where a file would land if nothing were in the way. Split out from
+    ``unique_file_path`` so that "which file do I mean?" and "is that name
+    already taken?" are two separate questions: the app has to be able to ask
+    the first one (to check for an existing photo, and to overwrite it on
+    request) without the second one silently renaming the target.
+
+    Creates no directory – it is pure path arithmetic and safe to call for a
+    file that may never be written.
+    """
+    directory = Path(directory)
+    stem = sanitize_name(Path(filename).stem)
+    return directory / f"{stem}{Path(filename).suffix}"
+
+
 def unique_file_path(directory: Union[str, Path], filename: str) -> Path:
     """Return a unique, sanitized file path inside *directory*.
 
     If *filename* already exists it will be suffixed with ``_1``, ``_2`` …
+    Note what that means for photos: the suffixed name is no longer a student
+    ID, so it cannot be matched back to a person by name alone. Callers that
+    care (see ``MainWindow.capture_photo``) ask the operator first.
     """
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    stem = sanitize_name(Path(filename).stem)
-    suffix = Path(filename).suffix
-    candidate = directory / f"{stem}{suffix}"
+    candidate = target_file_path(directory, filename)
+    stem, suffix = candidate.stem, candidate.suffix
     index = 1
     while candidate.exists():
         candidate = directory / f"{stem}_{index}{suffix}"

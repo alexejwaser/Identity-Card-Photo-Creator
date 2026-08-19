@@ -109,6 +109,12 @@ def main_window(qtbot, settings, dummy_camera, monkeypatch, tmp_path):
     # Der Review-Dialog wird automatisch bestaetigt, solange ein Test nichts
     # anderes sagt.
     monkeypatch.setattr(MainWindow, "_show_review", lambda self, path: True)
+    # Existiert die Zieldatei schon, fragt capture_photo modal nach
+    # ueberschreiben/behalten. Vorgabe hier: "beide behalten" - das ist das
+    # Verhalten von frueher, sodass bestehende Tests unveraendert gelten. Wer
+    # den Dialog selbst pruefen will, ersetzt ihn im Test (siehe
+    # test_overwrite_prompt.py).
+    monkeypatch.setattr(MainWindow, "_ask_overwrite", lambda self, learner, location: False)
     win = MainWindow(settings)
     qtbot.addWidget(win)
     return win

@@ -139,11 +139,31 @@ def test_reloading_a_clean_class_clears_earlier_conflicts(settings, tmp_path):
 
 # --- Die blockierte Aufnahme -----------------------------------------------
 
-def test_a_conflicted_learner_is_blocked_and_the_camera_never_fires(
-    main_window, settings, tmp_path, monkeypatch
+def test_the_class_is_warned_about_the_collision_in_advance(
+    main_window, settings, tmp_path
 ):
-    """Die Zusage aus der Entscheidung: lieber laut stehenbleiben als ein Foto
-    ablegen, das spaeter der falschen Person zugeordnet wird."""
+    """Die Vorwarnung beim Laden nennt beide IDs und den Dateinamen."""
+    path = roster(tmp_path, ("Alpha", "12.345"), ("Beta", "12345"))
+    main_window.reader = ExcelReader(path, MAPPING)
+    main_window.controller.learners_for_class("Bern", "1a")
+
+    gemeldet = []
+    main_window._notify = lambda t, text, level="info", show=True: gemeldet.append(
+        (t, text, level)
+    )
+    main_window._warn_about_id_conflicts()
+
+    assert len(gemeldet) == 1
+    titel, text, level = gemeldet[0]
+    assert level == "warning"
+    assert "12.345" in text and "12345.jpg" in text
+
+
+def test_the_second_of_two_colliding_learners_triggers_the_question(
+    main_window, settings, tmp_path
+):
+    """Der eigentliche Ablauf: die erste Aufnahme laeuft durch, erst die
+    zweite trifft auf eine belegte Datei - und dann wird gefragt."""
     path = roster(tmp_path, ("Alpha", "12.345"), ("Beta", "12345"))
     main_window.reader = ExcelReader(path, MAPPING)
     main_window.cmb_location.clear()
@@ -151,26 +171,20 @@ def test_a_conflicted_learner_is_blocked_and_the_camera_never_fires(
     main_window.controller.learners_for_class("Bern", "1a")
     main_window.controller.current = 0
 
-    gemeldet = []
-    main_window._notify = lambda titel, text, level="info", show=True: gemeldet.append(
-        (titel, text, level)
-    )
+    gefragt = []
+    main_window._ask_overwrite = lambda learner, location: gefragt.append(learner) or False
 
-    main_window.capture_photo()
+    main_window.capture_photo()          # Alpha - Datei ist frei
+    assert gefragt == []
 
-    assert main_window.controller.camera.captured == []      # nichts ausgeloest
-    assert len(gemeldet) == 1
-    titel, text, level = gemeldet[0]
-    assert "blockiert" in titel.lower()
-    assert level == "error"
-    assert "12.345" in text and "12345" in text              # beide IDs genannt
-    assert main_window.controller.current == 0               # niemand uebersprungen
+    main_window.capture_photo()          # Beta - derselbe Dateiname
+    assert [l.nachname for l in gefragt] == ["Beta"]
 
 
-def test_an_unconflicted_learner_is_photographed_normally(
+def test_an_unconflicted_learner_is_photographed_without_a_question(
     main_window, settings, tmp_path
 ):
-    """Die Gegenprobe - der Riegel darf nicht alles blockieren."""
+    """Die Gegenprobe - ohne Kollision wird nicht gefragt."""
     path = roster(tmp_path, ("Alpha", "111"), ("Beta", "222"))
     main_window.reader = ExcelReader(path, MAPPING)
     main_window.cmb_location.clear()
@@ -178,6 +192,10 @@ def test_an_unconflicted_learner_is_photographed_normally(
     main_window.controller.learners_for_class("Bern", "1a")
     main_window.controller.current = 0
 
+    gefragt = []
+    main_window._ask_overwrite = lambda learner, location: gefragt.append(learner) or False
+
     main_window.capture_photo()
 
     assert len(main_window.controller.camera.captured) == 1
+    assert gefragt == []

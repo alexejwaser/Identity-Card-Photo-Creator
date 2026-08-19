@@ -574,6 +574,59 @@ class MainWindow(QtWidgets.QMainWindow):
             f'"{conflict.key}.jpg".'
         )
 
+    def _ask_overwrite(self, learner, location) -> bool | None:
+        """Es gibt schon eine Datei mit diesem Namen – was nun?
+
+        Rückgabe: True = überschreiben, False = beide behalten, None = abbrechen.
+
+        Zwei verschiedene Lagen landen hier, und sie sind unterschiedlich
+        heikel. Wird dieselbe Person erneut fotografiert, ersetzt
+        "Überschreiben" nur ihr eigenes älteres Bild. Kollidieren dagegen zwei
+        *verschiedene* IDs auf denselben Dateinamen, gehört die vorhandene
+        Datei womöglich jemand anderem – dann ist deren Foto weg, während die
+        Person in Excel als fotografiert gilt. Das steht deshalb ausdrücklich
+        im Text: die Entscheidung trifft die Operatorin, aber nicht ahnungslos.
+        """
+        path = self.controller.planned_photo_path(learner, location)
+        conflict = self.controller.id_conflict_for(learner)
+        text = [
+            f'Es existiert bereits eine Datei "{path.name}" für '
+            f'{learner.vorname} {learner.nachname}.'
+        ]
+        if conflict is not None and len(conflict.ids) > 1:
+            andere = [i for i in conflict.ids if i != str(learner.schueler_id)]
+            text.append(
+                f'ACHTUNG: Auch die ID {", ".join(andere)} ergibt diesen '
+                'Dateinamen. Die vorhandene Datei kann also das Foto einer '
+                'anderen Person sein – beim Überschreiben geht es verloren, '
+                'obwohl die Person in Excel als fotografiert gilt.'
+            )
+        text.append(
+            'Überschreiben ersetzt die vorhandene Datei.\n'
+            f'Beide behalten legt "{path.stem}_1{path.suffix}" an – dieser Name '
+            'ist keine SchülerID mehr und lässt sich später keiner Person '
+            'zuordnen.'
+        )
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle('Foto existiert bereits')
+        box.setText('\n\n'.join(text))
+        btn_over = box.addButton('Überschreiben', QtWidgets.QMessageBox.DestructiveRole)
+        btn_keep = box.addButton('Beide behalten', QtWidgets.QMessageBox.AcceptRole)
+        btn_cancel = box.addButton('Abbrechen', QtWidgets.QMessageBox.RejectRole)
+        # Abbrechen ist die Vorgabe: wer die Meldung mit der Eingabetaste
+        # wegdrückt, ohne sie zu lesen, soll weder eine fremde Datei zerstören
+        # noch stillschweigend eine unzuordenbare "_1"-Datei anlegen. Nichts
+        # zu tun ist der einzige Ausgang, der nichts kaputtmacht.
+        box.setDefaultButton(btn_cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is btn_over:
+            return True
+        if clicked is btn_keep:
+            return False
+        return None
+
     def _warn_about_id_conflicts(self):
         conflicts = self.controller.id_conflicts
         if not conflicts:
@@ -767,23 +820,18 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             return
         learner = self.controller.learners[self.controller.current]
-        # Vor der Aufnahme, nicht danach: eine blockierte Aufnahme soll die
-        # Kamera gar nicht erst auslösen. Lieber hier laut stehenbleiben als
-        # ein Foto abzulegen, das später der falschen Person zugeordnet wird –
-        # das merkt niemand, bis der Ausweis gedruckt ist.
-        conflict = self.controller.id_conflict_for(learner)
-        if conflict is not None:
-            self._notify(
-                'Aufnahme blockiert – SchülerID nicht eindeutig',
-                f'{learner.vorname} {learner.nachname} kann nicht fotografiert '
-                f'werden.\n\n{self._describe_id_conflict(conflict)}\n\n'
-                'Bitte die ID in der Excel-Datei korrigieren und die Klasse neu '
-                'laden. Mit "Überspringen" geht es vorerst weiter.',
-                level='error',
-            )
-            return
-        self._set_busy(True)
         location = self.cmb_location.currentText()
+        # Gefragt wird *vor* dem Auslösen: eine Aufnahme, die danach verworfen
+        # wird, hat die Person umsonst posieren lassen. Und ohne die Frage
+        # hängt unique_file_path stillschweigend ein "_1" an – ein so
+        # benanntes Foto lässt sich später keiner Person mehr zuordnen.
+        overwrite = False
+        if self.controller.planned_photo_path(learner, location).exists():
+            entscheidung = self._ask_overwrite(learner, location)
+            if entscheidung is None:
+                return
+            overwrite = entscheidung
+        self._set_busy(True)
 
         # Pause the live-preview reads while the background task grabs the
         # actual capture frame: the same cv2.VideoCapture handle isn't safe
@@ -792,7 +840,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.preview.timer.stop()
 
         def task():
-            return self.controller.capture(learner, location)
+            return self.controller.capture(learner, location, overwrite=overwrite)
 
         if hasattr(QtConcurrent, 'run'):
             future = QtConcurrent.run(task)

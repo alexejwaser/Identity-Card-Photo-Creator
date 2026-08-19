@@ -12,7 +12,12 @@ from .excel.reader import ExcelReader, Learner
 from .identity import IdConflict, conflict_for, find_id_conflicts
 from .excel.missed_writer import MissedWriter, MissedEntry
 from .imaging.processor import process_image
-from .util.paths import class_output_dir, new_learner_dir, unique_file_path
+from .util.paths import (
+    class_output_dir,
+    new_learner_dir,
+    target_file_path,
+    unique_file_path,
+)
 
 
 class MainController:
@@ -198,13 +203,31 @@ class MainController:
                 return True
         return False
 
-    def capture(self, learner: Learner, location: str) -> Path:
+    def planned_photo_path(self, learner: Learner, location: str) -> Path:
+        """Wohin das Foto ginge, wenn nichts im Weg stuende.
+
+        Getrennt von ``capture``, damit die GUI *vor* dem Ausloesen fragen kann,
+        ob eine bereits vorhandene Datei ueberschrieben werden soll. Ohne diese
+        Trennung haengt ``unique_file_path`` stillschweigend ein ``_1`` an - und
+        ein so benanntes Foto laesst sich spaeter keiner Person mehr zuordnen.
+        """
         if learner.is_new:
             out_dir = new_learner_dir(self.settings.neueLernendeBasisPfad, location, learner.klasse)
-            raw_path = unique_file_path(out_dir, f"{learner.vorname}_{learner.nachname}.jpg")
+            name = f"{learner.vorname}_{learner.nachname}.jpg"
         else:
             out_dir = class_output_dir(self.settings.ausgabeBasisPfad, location, learner.klasse)
-            raw_path = unique_file_path(out_dir, f"{learner.schueler_id}.jpg")
+            name = f"{learner.schueler_id}.jpg"
+        return target_file_path(out_dir, name)
+
+    def capture(self, learner: Learner, location: str, overwrite: bool = False) -> Path:
+        planned = self.planned_photo_path(learner, location)
+        if overwrite:
+            # Bewusst der ungeaenderte Zielpfad: die Entscheidung, eine
+            # vorhandene Datei zu ersetzen, hat die Operatorin schon getroffen.
+            planned.parent.mkdir(parents=True, exist_ok=True)
+            raw_path = planned
+        else:
+            raw_path = unique_file_path(planned.parent, planned.name)
         self.camera.capture(raw_path)
         aspect = getattr(self.settings.bild, "seitenverhaeltnis", (3, 4))
         process_image(

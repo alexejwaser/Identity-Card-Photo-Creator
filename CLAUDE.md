@@ -54,7 +54,7 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**The suite is fully green** (170 passed). Shared fixtures live in
+**The suite is fully green** (181 passed). Shared fixtures live in
 `tests/conftest.py`: `settings`, `DummyCamera` / `dummy_camera`, and `main_window`
 (which also sets `QT_QPA_PLATFORM=offscreen` before the first Qt import). Add new
 doubles there rather than in a test module — they used to be copy-pasted across
@@ -139,8 +139,22 @@ Two rules:
 - Conflicts are computed in `MainController.learners_for_class()` against the
   **full** class, never the filtered working list: a learner dropped by
   `skip_photographed` still has a file in the output folder and still collides.
-- A conflicted learner is **blocked** in `capture_photo()` *before* the camera
-  fires. Loud failure beats a silently misfiled photo; "Überspringen" still works.
+- If the target file already exists, `capture_photo()` **asks** (`_ask_overwrite`)
+  *before* the camera fires — Überschreiben / Beide behalten / Abbrechen, with
+  **Abbrechen as the default button** so a reflexive Enter destroys nothing. When
+  another ID maps to the same name the text says so explicitly, because
+  overwriting then deletes a different student's photo while they stay marked as
+  photographed in Excel.
+
+That prompt covers two situations, not one. The obvious one is the ID collision;
+the common one is **re-photographing a student who is already done** (reload the
+class, include already-photographed). That used to write `12345_1.jpg` silently,
+leaving two files and nothing saying which is current.
+
+`planned_photo_path()` / `target_file_path()` exist to make the prompt possible:
+"which file do I mean?" has to be answerable *without* `unique_file_path`
+silently renaming the target first. Both build the name the same way — if they
+ever diverge, the app checks one file and writes another.
 
 `sanitize_name` itself is deliberately NOT fixed — it has to defang umlauts and
 punctuation so Windows paths don't break, and losing information is inherent to
