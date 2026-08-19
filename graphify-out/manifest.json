@@ -1,0 +1,392 @@
+{
+  ".claude/settings.local.json": {
+    "mtime": 1785144068.3258667,
+    "ast_hash": "3fe1d9f3972646ecd73ea8ca927100a8",
+    "semantic_hash": "3fe1d9f3972646ecd73ea8ca927100a8"
+  },
+  "app/__init__.py": {
+    "mtime": 1784806668.1716685,
+    "ast_hash": "2d9c021729b27412429822e1381108f9",
+    "semantic_hash": "2d9c021729b27412429822e1381108f9"
+  },
+  "app/core/__init__.py": {
+    "mtime": 1783504109.2385647,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "app/core/archiver/__init__.py": {
+    "mtime": 1783504109.2386599,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "app/core/archiver/chunk_zip.py": {
+    "mtime": 1783504109.2387683,
+    "ast_hash": "01173846e09e06fb7f54e5082b282d4d",
+    "semantic_hash": "01173846e09e06fb7f54e5082b282d4d"
+  },
+  "app/core/camera/__init__.py": {
+    "mtime": 1785143919.4896715,
+    "ast_hash": "dc90f5e6f8f7812d6ef09b5f487af90c",
+    "semantic_hash": "dc90f5e6f8f7812d6ef09b5f487af90c"
+  },
+  "app/core/camera/base.py": {
+    "mtime": 1783504109.2389498,
+    "ast_hash": "97dbb67aa1b42199e73a67e1477df9db",
+    "semantic_hash": "97dbb67aa1b42199e73a67e1477df9db"
+  },
+  "app/core/camera/directshow_backend.py": {
+    "mtime": 1785143919.490098,
+    "ast_hash": "c837ff35c8730cf2fecfe24778dd9226",
+    "semantic_hash": "c837ff35c8730cf2fecfe24778dd9226"
+  },
+  "app/core/camera/enumerate.py": {
+    "mtime": 1784805458.1728938,
+    "ast_hash": "422ba806d3a5d51bdffabcca8405135b",
+    "semantic_hash": "422ba806d3a5d51bdffabcca8405135b"
+  },
+  "app/core/camera/gphoto2_backend.py": {
+    "mtime": 1783504109.2390919,
+    "ast_hash": "70afdf6bf3b4703cefad7e06a2f399d5",
+    "semantic_hash": "70afdf6bf3b4703cefad7e06a2f399d5"
+  },
+  "app/core/camera/opencv_backend.py": {
+    "mtime": 1784806679.1359189,
+    "ast_hash": "6b819f22d68686582ae7df6ccb4cc1f3",
+    "semantic_hash": "6b819f22d68686582ae7df6ccb4cc1f3"
+  },
+  "app/core/camera/simulator.py": {
+    "mtime": 1783504109.2392356,
+    "ast_hash": "96ff3310b2fa62768f60496722901ee8",
+    "semantic_hash": "96ff3310b2fa62768f60496722901ee8"
+  },
+  "app/core/config/__init__.py": {
+    "mtime": 1783504109.2393048,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "app/core/config/settings.py": {
+    "mtime": 1787036721.4596262,
+    "ast_hash": "36d6f140ebd8f102d2ca93c3ef687a79",
+    "semantic_hash": "36d6f140ebd8f102d2ca93c3ef687a79"
+  },
+  "app/core/controller.py": {
+    "mtime": 1787118506.837658,
+    "ast_hash": "6b8d1ddcf66c03a38a2b68191693b17c",
+    "semantic_hash": "6b8d1ddcf66c03a38a2b68191693b17c"
+  },
+  "app/core/display/__init__.py": {
+    "mtime": 1787041672.5112062,
+    "ast_hash": "fd033f8bba4eaf655b691591a8a5cf5d",
+    "semantic_hash": "fd033f8bba4eaf655b691591a8a5cf5d"
+  },
+  "app/core/display/page.py": {
+    "mtime": 1787036721.460004,
+    "ast_hash": "2f489b51cb0b767774793ac8d857ce4f",
+    "semantic_hash": "2f489b51cb0b767774793ac8d857ce4f"
+  },
+  "app/core/display/server.py": {
+    "mtime": 1787036721.4604368,
+    "ast_hash": "22260ee950d1d4c14330a249d39667d5",
+    "semantic_hash": "22260ee950d1d4c14330a249d39667d5"
+  },
+  "app/core/display/state.py": {
+    "mtime": 1787036721.4606395,
+    "ast_hash": "7215eeac25a1ea7351b4cca8b621fcbf",
+    "semantic_hash": "7215eeac25a1ea7351b4cca8b621fcbf"
+  },
+  "app/core/excel/__init__.py": {
+    "mtime": 1783504109.2396472,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "app/core/excel/missed_writer.py": {
+    "mtime": 1783510810.3627694,
+    "ast_hash": "9c0a88c0520125fd2bf867ed589a9be8",
+    "semantic_hash": "9c0a88c0520125fd2bf867ed589a9be8"
+  },
+  "app/core/excel/reader.py": {
+    "mtime": 1787118506.8379295,
+    "ast_hash": "cbf9b59e21089b9ad17764f0daae763c",
+    "semantic_hash": "cbf9b59e21089b9ad17764f0daae763c"
+  },
+  "app/core/excel/test_data.py": {
+    "mtime": 1784624722.554726,
+    "ast_hash": "2899e690f07e9dce5fb29ad23652af19",
+    "semantic_hash": "2899e690f07e9dce5fb29ad23652af19"
+  },
+  "app/core/imaging/__init__.py": {
+    "mtime": 1783504109.2398815,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "app/core/imaging/processor.py": {
+    "mtime": 1783504109.2399716,
+    "ast_hash": "bfb793a1c3529b1678dce67931a65c46",
+    "semantic_hash": "bfb793a1c3529b1678dce67931a65c46"
+  },
+  "app/core/util/__init__.py": {
+    "mtime": 1783504109.240064,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "app/core/util/logging.py": {
+    "mtime": 1783504109.2401757,
+    "ast_hash": "5875aff1d8a25cafa5f5198bfd6cdc67",
+    "semantic_hash": "5875aff1d8a25cafa5f5198bfd6cdc67"
+  },
+  "app/core/util/paths.py": {
+    "mtime": 1787118506.8382897,
+    "ast_hash": "25e7e3d01e9be3b7ee8c0e1f4570fc76",
+    "semantic_hash": "25e7e3d01e9be3b7ee8c0e1f4570fc76"
+  },
+  "app/main.py": {
+    "mtime": 1785143919.4917152,
+    "ast_hash": "c2dcf0b72db0b1b32ca27112f055a200",
+    "semantic_hash": "c2dcf0b72db0b1b32ca27112f055a200"
+  },
+  "app/ui/__init__.py": {
+    "mtime": 1783504109.2405005,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "app/ui/class_search_dialog.py": {
+    "mtime": 1783510810.363384,
+    "ast_hash": "799ccc084da4b523656de8fb8a273692",
+    "semantic_hash": "799ccc084da4b523656de8fb8a273692"
+  },
+  "app/ui/icons.py": {
+    "mtime": 1787036721.4609761,
+    "ast_hash": "1e8db94f48996100b4d17ee24b6a53d7",
+    "semantic_hash": "1e8db94f48996100b4d17ee24b6a53d7"
+  },
+  "app/ui/main_window.py": {
+    "mtime": 1787118585.3307157,
+    "ast_hash": "7d7c8c91b6e5fd4f8f51daccd88267c5",
+    "semantic_hash": "7d7c8c91b6e5fd4f8f51daccd88267c5"
+  },
+  "app/ui/onboarding_dialog.py": {
+    "mtime": 1783510810.3638363,
+    "ast_hash": "433f0bf174cc537fef5ea7bf4637540b",
+    "semantic_hash": "433f0bf174cc537fef5ea7bf4637540b"
+  },
+  "app/ui/settings_dialog.py": {
+    "mtime": 1787036721.4615772,
+    "ast_hash": "20049c52eb94f5644a6630e0ced49e17",
+    "semantic_hash": "20049c52eb94f5644a6630e0ced49e17"
+  },
+  "app/ui/theme.py": {
+    "mtime": 1785143919.4935637,
+    "ast_hash": "01d99d4faf273fdc85818999479272d9",
+    "semantic_hash": "01d99d4faf273fdc85818999479272d9"
+  },
+  "app/ui/widgets/__init__.py": {
+    "mtime": 1783510810.3641446,
+    "ast_hash": "ecb589c6f6950be79453c5afdb25ea00",
+    "semantic_hash": "ecb589c6f6950be79453c5afdb25ea00"
+  },
+  "app/ui/widgets/control_panel.py": {
+    "mtime": 1785143919.4940305,
+    "ast_hash": "febd57d93c7ec7455b37b32a0c8f38e9",
+    "semantic_hash": "febd57d93c7ec7455b37b32a0c8f38e9"
+  },
+  "app/ui/widgets/live_view_widget.py": {
+    "mtime": 1785143919.4948258,
+    "ast_hash": "fa3e00828c7353bc6a9f2bdbeb6252d9",
+    "semantic_hash": "fa3e00828c7353bc6a9f2bdbeb6252d9"
+  },
+  "app/ui/widgets/overlay.py": {
+    "mtime": 1783504109.2414045,
+    "ast_hash": "6662e0b876d381f9682e8edd4b3e5640",
+    "semantic_hash": "6662e0b876d381f9682e8edd4b3e5640"
+  },
+  "app/version.py": {
+    "mtime": 1787118875.681659,
+    "ast_hash": "9031066365ff351b32cc0c6b1f75e2eb",
+    "semantic_hash": "9031066365ff351b32cc0c6b1f75e2eb"
+  },
+  "tests/__init__.py": {
+    "mtime": 1783504109.242012,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tests/conftest.py": {
+    "mtime": 1787118585.330996,
+    "ast_hash": "b58c6a18d9002163fb74628f12849de2",
+    "semantic_hash": "b58c6a18d9002163fb74628f12849de2"
+  },
+  "tests/test_camera_enumerate.py": {
+    "mtime": 1787036721.4618282,
+    "ast_hash": "07d89f9a38b17c85e564cccea2cbb9fd",
+    "semantic_hash": "07d89f9a38b17c85e564cccea2cbb9fd"
+  },
+  "tests/test_chunk_zip.py": {
+    "mtime": 1783504109.2420995,
+    "ast_hash": "7af5bef0de2d0cbf819da4a53a15e7f8",
+    "semantic_hash": "7af5bef0de2d0cbf819da4a53a15e7f8"
+  },
+  "tests/test_controller_camera.py": {
+    "mtime": 1785143919.4964678,
+    "ast_hash": "053955c70ccbceced0ef406882312b90",
+    "semantic_hash": "053955c70ccbceced0ef406882312b90"
+  },
+  "tests/test_display_server.py": {
+    "mtime": 1787036721.4620364,
+    "ast_hash": "126870f1d44e83cf76846fa783834ddf",
+    "semantic_hash": "126870f1d44e83cf76846fa783834ddf"
+  },
+  "tests/test_display_state.py": {
+    "mtime": 1787036721.4622524,
+    "ast_hash": "1cdf1ff67b52860797d02501e3412a46",
+    "semantic_hash": "1cdf1ff67b52860797d02501e3412a46"
+  },
+  "tests/test_excel_reader.py": {
+    "mtime": 1783504109.2421687,
+    "ast_hash": "655165874ee912ff2167f0d684284b4a",
+    "semantic_hash": "655165874ee912ff2167f0d684284b4a"
+  },
+  "tests/test_excel_test_data.py": {
+    "mtime": 1784624722.5550303,
+    "ast_hash": "9036aa5b3268f0d0e11038aeeecc7cc8",
+    "semantic_hash": "9036aa5b3268f0d0e11038aeeecc7cc8"
+  },
+  "tests/test_logging.py": {
+    "mtime": 1783504109.242236,
+    "ast_hash": "91c4c89eed24800805cba7e1c4a4106e",
+    "semantic_hash": "91c4c89eed24800805cba7e1c4a4106e"
+  },
+  "tests/test_mainwindow_ui.py": {
+    "mtime": 1787041672.5126626,
+    "ast_hash": "1dbd307c0c89a8c006d380d9b475a0ba",
+    "semantic_hash": "1dbd307c0c89a8c006d380d9b475a0ba"
+  },
+  "tests/test_missed_writer.py": {
+    "mtime": 1783504109.242412,
+    "ast_hash": "eb04513cf6fd3e587f09eb796dba8646",
+    "semantic_hash": "eb04513cf6fd3e587f09eb796dba8646"
+  },
+  "tests/test_opencv_backend.py": {
+    "mtime": 1784805728.2798991,
+    "ast_hash": "7c460533f6047ed55204f1bbd38eb762",
+    "semantic_hash": "7c460533f6047ed55204f1bbd38eb762"
+  },
+  "tests/test_paths.py": {
+    "mtime": 1783511613.2107823,
+    "ast_hash": "b533db1f4eab295a31c9b7d5b80729d2",
+    "semantic_hash": "b533db1f4eab295a31c9b7d5b80729d2"
+  },
+  "tests/test_photo_saving.py": {
+    "mtime": 1787041672.5128865,
+    "ast_hash": "cb2bbd8c2c6db56fa6e97ca44302644d",
+    "semantic_hash": "cb2bbd8c2c6db56fa6e97ca44302644d"
+  },
+  "tests/test_processor.py": {
+    "mtime": 1783504109.242671,
+    "ast_hash": "d6b6717a175d7572077de114dc1a6eb7",
+    "semantic_hash": "d6b6717a175d7572077de114dc1a6eb7"
+  },
+  "tests/test_settings.py": {
+    "mtime": 1787036721.4633763,
+    "ast_hash": "a1dfb3597c44ff4a1fe57b83b0dc3513",
+    "semantic_hash": "a1dfb3597c44ff4a1fe57b83b0dc3513"
+  },
+  "tests/test_settings_dialog.py": {
+    "mtime": 1787041672.5130897,
+    "ast_hash": "edc3a490e48b6fc75c7c497f37574b03",
+    "semantic_hash": "edc3a490e48b6fc75c7c497f37574b03"
+  },
+  ".github/workflows/build-exe.yml": {
+    "mtime": 1785143919.488695,
+    "ast_hash": "4090853da9367144fa2cf79618875cb7",
+    "semantic_hash": "4090853da9367144fa2cf79618875cb7"
+  },
+  "CLAUDE.md": {
+    "mtime": 1787118585.3299153,
+    "ast_hash": "40c8affe703fd2e949ee4ed0d526720a",
+    "semantic_hash": "40c8affe703fd2e949ee4ed0d526720a"
+  },
+  "README.md": {
+    "mtime": 1787041672.5104496,
+    "ast_hash": "590765bf1269bebf45494af26315fbb5",
+    "semantic_hash": "590765bf1269bebf45494af26315fbb5"
+  },
+  "requirements.txt": {
+    "mtime": 1785143919.495996,
+    "ast_hash": "878c9bb14d8f3f117d94f0dd3e879782",
+    "semantic_hash": "878c9bb14d8f3f117d94f0dd3e879782"
+  },
+  "app/core/config/settings_change.py": {
+    "mtime": 1787118585.3301525,
+    "ast_hash": "e3699ad703a14632464a9311243b39af",
+    "semantic_hash": "e3699ad703a14632464a9311243b39af"
+  },
+  "app/core/display/controller.py": {
+    "mtime": 1787041672.5115516,
+    "ast_hash": "561e9fe242a880be2dc7448c055aa5d0",
+    "semantic_hash": "561e9fe242a880be2dc7448c055aa5d0"
+  },
+  "app/core/identity.py": {
+    "mtime": 1787118506.838099,
+    "ast_hash": "3b992d1b733de24903cfc70fd0284988",
+    "semantic_hash": "3b992d1b733de24903cfc70fd0284988"
+  },
+  "app/core/test_mode.py": {
+    "mtime": 1787118585.3302913,
+    "ast_hash": "1cf11ac3ab64ab83e00d98cc971a6fe4",
+    "semantic_hash": "1cf11ac3ab64ab83e00d98cc971a6fe4"
+  },
+  "app/core/util/onboarding.py": {
+    "mtime": 1787118585.3304255,
+    "ast_hash": "0f3695ef3af894db80af515757827f0c",
+    "semantic_hash": "0f3695ef3af894db80af515757827f0c"
+  },
+  "tests/test_class_search_dialog.py": {
+    "mtime": 1787118585.3311234,
+    "ast_hash": "ee03e76fe50c269dfc7b65870d7918ad",
+    "semantic_hash": "ee03e76fe50c269dfc7b65870d7918ad"
+  },
+  "tests/test_display_controller.py": {
+    "mtime": 1787041672.5124333,
+    "ast_hash": "88040e9ce5ba29a5bccef6a031cc7769",
+    "semantic_hash": "88040e9ce5ba29a5bccef6a031cc7769"
+  },
+  "tests/test_id_conflicts_end_to_end.py": {
+    "mtime": 1787118506.839062,
+    "ast_hash": "dd83857eb375c539574f74cd51162cfc",
+    "semantic_hash": "dd83857eb375c539574f74cd51162cfc"
+  },
+  "tests/test_identity.py": {
+    "mtime": 1787118506.8392637,
+    "ast_hash": "5ae62210446d4191fec99445aa71ea20",
+    "semantic_hash": "5ae62210446d4191fec99445aa71ea20"
+  },
+  "tests/test_mainwindow_dialogs.py": {
+    "mtime": 1787118585.331305,
+    "ast_hash": "605012e1a4735377f0bdfc9ffd5687e2",
+    "semantic_hash": "605012e1a4735377f0bdfc9ffd5687e2"
+  },
+  "tests/test_onboarding.py": {
+    "mtime": 1787118585.3314946,
+    "ast_hash": "1a0bacbb1e7c3ca00d8037c824cce974",
+    "semantic_hash": "1a0bacbb1e7c3ca00d8037c824cce974"
+  },
+  "tests/test_overwrite_prompt.py": {
+    "mtime": 1787118506.839436,
+    "ast_hash": "54c92979c8f8d720c50b2777799b62d2",
+    "semantic_hash": "54c92979c8f8d720c50b2777799b62d2"
+  },
+  "tests/test_settings_change.py": {
+    "mtime": 1787118585.3316388,
+    "ast_hash": "aadafd745baada78f54917ff91cce84d",
+    "semantic_hash": "aadafd745baada78f54917ff91cce84d"
+  },
+  "tests/test_test_mode.py": {
+    "mtime": 1787118585.3318286,
+    "ast_hash": "0a5928b0dee7107c2f5cd927d6264304",
+    "semantic_hash": "0a5928b0dee7107c2f5cd927d6264304"
+  },
+  "tools/check_output.py": {
+    "mtime": 1787148245.119031,
+    "ast_hash": "7cb5edeb4f9c4f716571eae017d61a88",
+    "semantic_hash": "7cb5edeb4f9c4f716571eae017d61a88"
+  }
+}
