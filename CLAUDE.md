@@ -54,7 +54,7 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**The suite is fully green** (265 passed, 1 skipped). Shared fixtures live in
+**The suite is fully green** (276 passed, 1 skipped). Shared fixtures live in
 `tests/conftest.py`: `settings`, `DummyCamera` / `dummy_camera`, and
 `main_window_factory` / `main_window` (which also sets `QT_QPA_PLATFORM=offscreen`
 before the first Qt import). The factory exists for one reason: `main_window`
@@ -190,6 +190,29 @@ ever diverge, the app checks one file and writes another.
 `sanitize_name` itself is deliberately NOT fixed — it has to defang umlauts and
 punctuation so Windows paths don't break, and losing information is inherent to
 that. `tests/test_identity.py` pins its current behaviour as characterization.
+
+**The name on screen must belong to the ID on the file** —
+`tests/test_name_id_coupling.py`. This is the one failure mode nothing else can
+see: show "Anna Abt", file the photo under Beat's ID, and there is no error, no
+gap and no orphan — every file still maps cleanly to a roster row, so
+`tools/check_output.py` reports "keine Auffälligkeiten" (it audits the
+bookkeeping, not face → name). It surfaces weeks later on a card. The older tests
+cover the two halves separately: `test_mainwindow_ui.py` the labels,
+`test_photo_saving.py` the filenames.
+
+Two properties make that module work, and both are easy to destroy while
+"cleaning up":
+- **Names and IDs in `ROSTER` are deliberately non-parallel** (IDs shuffled, no
+  relation to row order). With fixtures like `John Doe = "1", Jane Roe = "2"` an
+  off-by-one shifts the expectation along with the bug and stays green.
+- `fotografieren()` reads `label_current` **before** the click and pairs it with
+  the file that capture wrote. Read it after and the test checks itself against
+  the state it was supposed to catch drifting.
+
+Mutation-checked: shifting `capture_photo`'s learner index, `show_next`'s
+displayed learner, `build_snapshot`'s `current`, or dropping the `jump_return`
+branch each turn exactly one test red. `test_the_check_would_actually_fail_on_a_swapped_pair`
+guards `pruefe_paare` itself from going vacuous.
 
 ### UI
 - `app/main.py` — creates the QApplication, calls `apply_dark_theme(app)`,
