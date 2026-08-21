@@ -1,6 +1,7 @@
 # app/core/config/settings.py
 """Configuration management using Pydantic models."""
 
+from copy import deepcopy
 from pathlib import Path
 import json
 import os
@@ -61,9 +62,37 @@ def _default_new_learner_path() -> Path:
 # First-run defaults (used when settings.json does not yet exist)
 # ---------------------------------------------------------------------------
 
-# Hinweistexte der Wartezimmer-Anzeige (ein Eintrag = eine Folie der Slideshow).
+# Folien der Wartezimmer-Anzeige (ein Eintrag = eine Folie der Slideshow).
+# Greift nur bei einer Neuinstallation; eine bestehende settings.json behält
+# ihren Inhalt.
 DEFAULT_HINWEISE = [
-    'Die Fotos werden lediglich intern abgespeichert und nicht veröffentlicht.',
+    {
+        'titel': 'Foto & Verwendung',
+        'text': '',
+        'punkte': [
+            'Foto für LegicCard',
+            'Nur im schulNetz und auf dem Ausweis sichtbar',
+            'Digital im Schülerdossier abgelegt',
+        ],
+    },
+    {
+        'titel': 'Foto-Regeln',
+        'text': '',
+        'punkte': [
+            'Keine Kopfbedeckungen',
+            'Lachen erlaubt',
+            'Nur 1 Foto pro Person (Ausnahme: Augen zu / unscharf)',
+        ],
+    },
+    {
+        'titel': 'LegicCard Funktionen',
+        'text': '',
+        'punkte': [
+            'Gültig während der ganzen Ausbildung',
+            'Rabatte in Geschäften',
+            'Kopieren, Drucken, Scannen am BBZB',
+        ],
+    },
 ]
 
 DEFAULTS = {
@@ -98,7 +127,7 @@ DEFAULTS = {
         'kompakt': False,
         'anzahlNaechste': 3,
         'vollstaendigeNamen': False,
-        'hinweise': list(DEFAULT_HINWEISE),
+        'hinweise': deepcopy(DEFAULT_HINWEISE),
         'hinweisIntervallSekunden': 10,
     },
     'zip': {'maxAnzahl': None, 'maxGroesseMB': None},
@@ -177,6 +206,19 @@ class KameraSettings(BaseModel):
     devicePath: str = ''
 
 
+class HinweisFolie(BaseModel):
+    """Eine Folie der Hinweis-Slideshow: Übertitel, Fliesstext, Aufzählung.
+
+    Alle drei Teile sind optional und werden auf der Anzeige weggelassen, wenn
+    sie leer sind — eine Folie aus einem einzigen Satz (`text`) sieht damit
+    genauso aus wie die früheren zeilenbasierten Hinweise.
+    """
+
+    titel: str = ''
+    text: str = ''
+    punkte: List[str] = Field(default_factory=list)
+
+
 class AnzeigeSettings(BaseModel):
     """Wartezimmer-Anzeige auf einem zweiten Gerät (Browser im selben WLAN)."""
 
@@ -192,10 +234,29 @@ class AnzeigeSettings(BaseModel):
     # Aus = "Anna M.". Die Seite hängt öffentlich im Gang, deshalb ist die
     # abgekürzte Form der Standard; volle Namen sind eine bewusste Entscheidung.
     vollstaendigeNamen: bool = False
-    # Hinweistexte, die rechts als Slideshow durchlaufen (ein Eintrag = eine
-    # Folie). Leere Liste = kein Hinweis-Panel.
-    hinweise: List[str] = Field(default_factory=lambda: list(DEFAULT_HINWEISE))
+    # Folien, die rechts als Slideshow durchlaufen. Leere Liste = kein
+    # Hinweis-Panel. Der Schlüssel heisst weiterhin 'hinweise', damit
+    # bestehende settings.json ohne Migrationsstufe weiterlesen.
+    # Der Default baut echte Modelle, nicht die rohen dicts: pydantic validiert
+    # Default-Werte nicht, sonst stünden hier dicts und jeder Aufrufer müsste
+    # beide Formen aushalten.
+    hinweise: List[HinweisFolie] = Field(
+        default_factory=lambda: [HinweisFolie(**f) for f in DEFAULT_HINWEISE]
+    )
     hinweisIntervallSekunden: int = 10
+
+    @field_validator('hinweise', mode='before')
+    @classmethod
+    def upgrade_legacy_hints(cls, v):
+        """Hebt das alte Format (eine Folie = ein String) auf Folien an.
+
+        Vor v1.2.1 war ``hinweise`` eine Liste von Sätzen. Ein solcher Satz wird
+        zum Fliesstext einer Folie ohne Titel; beim nächsten ``save()`` steht das
+        neue Format in der Datei.
+        """
+        if not isinstance(v, list):
+            return v
+        return [{'text': item} if isinstance(item, str) else item for item in v]
 
 
 class ZipSettings(BaseModel):

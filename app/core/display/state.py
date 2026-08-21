@@ -32,6 +32,36 @@ def format_name(vorname: str, nachname: str, full: bool = False) -> str:
     return f"{vorname} {nachname[0]}."
 
 
+def _field(folie: Any, name: str, default: Any) -> Any:
+    """Liest *name* aus einem Modell **oder** einem dict."""
+    if isinstance(folie, dict):
+        return folie.get(name, default)
+    return getattr(folie, name, default)
+
+
+def normalize_slide(folie: Any) -> Optional[Dict[str, Any]]:
+    """Eine Folie in die Form, die die Seite erwartet - oder ``None``.
+
+    Nimmt ein ``HinweisFolie``-Modell, ein dict oder (aus dem alten,
+    zeilenbasierten Format) einen blossen String. Alles wird getrimmt, leere
+    Aufzaehlungspunkte fallen weg, und eine Folie ohne jeden Inhalt liefert
+    ``None`` - das ist der Nachfolger der frueheren "Leerzeilen fliegen raus"-
+    Regel, die es beim Tippen im Einstellungsdialog braucht.
+    """
+    if isinstance(folie, str):
+        folie = {"text": folie}
+    titel = str(_field(folie, "titel", "") or "").strip()
+    text = str(_field(folie, "text", "") or "").strip()
+    punkte = [
+        str(p or "").strip()
+        for p in (_field(folie, "punkte", ()) or ())
+        if str(p or "").strip()
+    ]
+    if not titel and not text and not punkte:
+        return None
+    return {"titel": titel, "text": text, "punkte": punkte}
+
+
 def build_snapshot(
     *,
     learners: Sequence[Any],
@@ -43,7 +73,7 @@ def build_snapshot(
     class_finished: bool = False,
     count: int = 3,
     full_names: bool = False,
-    hints: Optional[Sequence[str]] = None,
+    hints: Optional[Sequence[Any]] = None,
     hint_interval: int = 10,
     compact: bool = False,
 ) -> Dict[str, Any]:
@@ -55,13 +85,17 @@ def build_snapshot(
     Leute draussen aufgerufen, die nach der vorgezogenen Person stehen, statt
     derer, die tatsaechlich als Naechstes dran sind.
 
-    *hints* laufen rechts als Slideshow durch und haengen bewusst **nicht** am
-    Zustand: sie sollen auch beim Warten und nach Klassenschluss lesbar bleiben.
+    *hints* sind Folien (Titel / Fliesstext / Aufzaehlung, siehe
+    ``normalize_slide``), die rechts als Slideshow durchlaufen. Sie haengen
+    bewusst **nicht** am Zustand: sie sollen auch beim Warten und nach
+    Klassenschluss lesbar bleiben.
     """
     total = len(learners)
     klasse = (klasse or "").strip()
     standort = (standort or "").strip()
-    clean_hints = [h.strip() for h in (hints or []) if h and h.strip()]
+    clean_hints = [
+        slide for slide in (normalize_slide(h) for h in (hints or [])) if slide
+    ]
 
     base: Dict[str, Any] = {
         "state": STATE_IDLE,

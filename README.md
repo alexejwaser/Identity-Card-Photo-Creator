@@ -54,11 +54,11 @@ Der Bildschirm-Knopf unten links in der Seitenleiste startet die Anzeige. Sie ze
 
 **Netzwerk** – für ein zweites Gerät im selben WLAN. Die angezeigte Adresse (z. B. `http://192.168.1.42:8080`) dort im Browser öffnen.
 
-Dazu ein **Layout**-Schalter: *Standard* zeigt rechts die Hinweise, *Kompakt* blendet sie aus und vergrössert die Namen deutlich – gedacht für kleine Bildschirme wie ein 7"-Mini-Display.
+Dazu ein **Layout**-Schalter: *Standard* zeigt rechts die Folien, *Kompakt* blendet sie aus und vergrössert die Namen deutlich – gedacht für kleine Bildschirme wie ein 7"-Mini-Display.
 
 - Nur im **Netzwerk**-Modus: beide Geräte müssen im selben WLAN sein, und fragt Windows beim ersten Start nach der Firewall, den Zugriff für **private Netzwerke** erlauben. Im Lokal-Modus entfällt beides – dort steht in der Statusleiste `Anzeige (lokal): http://localhost:8080`.
-- Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port, Anzahl der angezeigten Personen sowie die Hinweistexte lassen sich in den Einstellungen unter **Anzeige (zweiter Bildschirm)** umstellen.
-- Mehrere Hinweise (ein Hinweis pro Zeile) laufen auf der Seite als Slideshow durch.
+- Standardmässig werden Namen abgekürzt (`Anna M.`), da die Anzeige öffentlich hängt. Volle Namen, Port, Anzahl der angezeigten Personen sowie die Folien lassen sich in den Einstellungen unter **Anzeige (zweiter Bildschirm)** umstellen.
+- Rechts läuft eine **Folien-Slideshow** mit den Informationen für die Wartenden. Eine Folie besteht aus einem Übertitel, einem optionalen Fliesstext und beliebig vielen Aufzählungspunkten; im Einstellungsdialog werden die Folien in einer Liste angelegt, bearbeitet und mit ↑/↓ sortiert. Das Wechselintervall gilt für alle Folien gemeinsam.
 - Verliert die Seite den Kontakt zur App, meldet sie das selbst („Keine Verbindung zur App") statt weiter alte Namen aufzurufen.
 - Der Server läuft nur, solange er eingeschaltet ist, und startet nach einem Neustart der App nicht von selbst.
 
