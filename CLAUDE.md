@@ -54,7 +54,7 @@ Logs: `logs/` from source, and `%AppData%\LegicCardCreator\...` in the packaged
 app. Camera opens / first-frames are logged at INFO (the EOS open line reads
 `Backend DirectShow (pygrabber)` + a first-frame `mittlere Helligkeit`).
 
-**The suite is fully green** (244 passed). Shared fixtures live in
+**The suite is fully green** (276 passed, 1 skipped). Shared fixtures live in
 `tests/conftest.py`: `settings`, `DummyCamera` / `dummy_camera`, and
 `main_window_factory` / `main_window` (which also sets `QT_QPA_PLATFORM=offscreen`
 before the first Qt import). The factory exists for one reason: `main_window`
@@ -191,6 +191,29 @@ ever diverge, the app checks one file and writes another.
 punctuation so Windows paths don't break, and losing information is inherent to
 that. `tests/test_identity.py` pins its current behaviour as characterization.
 
+**The name on screen must belong to the ID on the file** —
+`tests/test_name_id_coupling.py`. This is the one failure mode nothing else can
+see: show "Anna Abt", file the photo under Beat's ID, and there is no error, no
+gap and no orphan — every file still maps cleanly to a roster row, so
+`tools/check_output.py` reports "keine Auffälligkeiten" (it audits the
+bookkeeping, not face → name). It surfaces weeks later on a card. The older tests
+cover the two halves separately: `test_mainwindow_ui.py` the labels,
+`test_photo_saving.py` the filenames.
+
+Two properties make that module work, and both are easy to destroy while
+"cleaning up":
+- **Names and IDs in `ROSTER` are deliberately non-parallel** (IDs shuffled, no
+  relation to row order). With fixtures like `John Doe = "1", Jane Roe = "2"` an
+  off-by-one shifts the expectation along with the bug and stays green.
+- `fotografieren()` reads `label_current` **before** the click and pairs it with
+  the file that capture wrote. Read it after and the test checks itself against
+  the state it was supposed to catch drifting.
+
+Mutation-checked: shifting `capture_photo`'s learner index, `show_next`'s
+displayed learner, `build_snapshot`'s `current`, or dropping the `jump_return`
+branch each turn exactly one test red. `test_the_check_would_actually_fail_on_a_swapped_pair`
+guards `pruefe_paare` itself from going vacuous.
+
 ### UI
 - `app/main.py` — creates the QApplication, calls `apply_dark_theme(app)`,
   builds `MainController` + `MainWindow`.
@@ -277,13 +300,22 @@ snapshot, so flipping it applies live without a reload.
   (skip / retake / add person / jump / finish) is a plain unit test. Names are
   abbreviated (`Anna M.`) unless `settings.anzeige.vollstaendigeNamen`; **student
   IDs never enter the payload** — the page hangs in a public hallway.
+  `normalize_slide()` turns one hint slide into the shape the page renders
+  (`titel` / `text` / `punkte`), trims every part, drops blank bullets, and
+  returns `None` for a slide with nothing in it — that last bit is what keeps a
+  stray "+" click in the settings dialog from putting an empty panel in the
+  hallway. It accepts a `HinweisFolie`, a plain dict **or** a bare `str`; see the
+  migration note below for why the string case has to stay.
 - `page.py` — the browser page as a Python string constant, same rationale as the
   base64 icons: no extra PyInstaller `--add-data`, no external resources. Polls
   `/api/state` once a second and re-renders only when `rev` changes. The visual
   hierarchy is deliberately inverted: **the next person is the largest element**,
-  the one currently inside is small — nobody outside is waiting on them. Hints
-  rotate in a side panel with Apple-style dot indicators; a class-progress bar
-  sits above the footer. Every poll runs under an `AbortController` deadline —
+  the one currently inside is small — nobody outside is waiting on them. Hint
+  slides rotate in a side panel with Apple-style dot indicators, each rendered as
+  optional title + paragraph + bullet list (`renderSlide()`, built with
+  `createElement`/`textContent` — the strings come from a user input field); a
+  class-progress bar sits above the footer. Every poll runs under an
+  `AbortController` deadline —
   without it a half-dead WLAN leaves the promise neither resolved nor rejected,
   and the page silently freezes without ever reporting "no connection".
 - `server.py` — `DisplayServer` over `ThreadingHTTPServer` in a daemon thread.
@@ -303,6 +335,28 @@ snapshot, so flipping it applies live without a reload.
   sides share one `Settings` object by reference, so a settings-dialog edit to
   `vollstaendigeNamen`/`kompakt`/`hinweise` is picked up by the next timer tick
   with no restart — only port and modus need `restart_if_endpoint_changed()`.
+
+**The hint slides and their legacy format.** `settings.anzeige.hinweise` is a
+`List[HinweisFolie]` (`titel` / `text` / `punkte`) — before v1.2.1 it was a
+`List[str]`, one sentence per slide, edited in a `QPlainTextEdit` where **one
+line = one slide**. The JSON key kept the name `hinweise` on purpose: a rename
+would have needed a real migration step, whereas a `field_validator(mode='before')`
+on the field lifts a bare `str` to `{'text': …}` and an old `settings.json` just
+keeps working (it is rewritten in the new shape on the next `save()`). Don't drop
+that validator, and don't drop the `str` branch in `normalize_slide()` — an
+installed v1.2.0 in the field still has the old file. Note the default has to
+build `HinweisFolie` objects, not the raw dicts from `DEFAULT_HINWEISE`: pydantic
+does **not** validate defaults, so raw dicts would reach callers that expect
+models (the settings dialog calls `.model_dump()` on each entry).
+
+The editor is `app/ui/widgets/slides_editor.py` (`SlidesEditor`): list of slides
+on the left with add/remove/reorder, the fields of the selected slide on the
+right. Its one subtlety is the write-back — the widget holds the list, the fields
+show one entry, so `_flush()` writes the fields into `_current` *before*
+`_load()` swaps in another, and `_loading` suppresses the `textChanged` that
+programmatic filling would otherwise fire back into the previous slide. Any new
+mutation (a duplicate button, drag-and-drop) must `_flush()` first and reset
+`_current` if it reorders, or an unsaved edit lands on the wrong slide.
 
 **Never show stale names silently.** `publish()` refreshes a timestamp on *every*
 call — even when the content is unchanged and `rev` stays put — and `/api/state`

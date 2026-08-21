@@ -152,31 +152,78 @@ def test_no_student_ids_leak_into_the_payload():
     assert '100' not in repr(snap(learners, 0))
 
 
-# --- Hinweise --------------------------------------------------------------
+# --- Folien ----------------------------------------------------------------
 
-def test_hints_travel_with_the_snapshot():
-    learners = make_learners('Anna')
-    result = snap(learners, 0, hints=['Erster Hinweis', 'Zweiter Hinweis'])
-    assert result['hints'] == ['Erster Hinweis', 'Zweiter Hinweis']
+def slide(titel='', text='', punkte=()):
+    """Eine Folie in der Form, die die Seite erwartet."""
+    return {'titel': titel, 'text': text, 'punkte': list(punkte)}
 
 
-def test_hints_are_independent_of_the_state():
-    # Draussen soll der Hinweis auch beim Warten und nach Klassenschluss lesbar
-    # bleiben - er haengt bewusst nicht am Fotografier-Zustand.
-    hints = ['Bitte einzeln eintreten']
+def test_slides_travel_with_the_snapshot():
+    folie = {'titel': 'Foto-Regeln', 'punkte': ['Keine Kopfbedeckungen', 'Lachen erlaubt']}
+    result = snap(make_learners('Anna'), 0, hints=[folie])
+    assert result['hints'] == [
+        slide('Foto-Regeln', punkte=['Keine Kopfbedeckungen', 'Lachen erlaubt'])
+    ]
+
+
+def test_slides_are_independent_of_the_state():
+    # Draussen soll die Folie auch beim Warten und nach Klassenschluss lesbar
+    # bleiben - sie haengt bewusst nicht am Fotografier-Zustand.
+    hints = [{'text': 'Bitte einzeln eintreten'}]
     idle = build_snapshot(learners=[], current=0, klasse='', has_roster=False, hints=hints)
     done = snap(make_learners('Anna'), 0, class_finished=True, hints=hints)
-    assert idle['hints'] == hints
-    assert done['hints'] == hints
+    assert idle['hints'] == [slide(text='Bitte einzeln eintreten')]
+    assert done['hints'] == idle['hints']
 
 
-def test_blank_hint_lines_are_dropped():
-    # Das Textfeld in den Einstellungen produziert leicht Leerzeilen.
-    result = snap(make_learners('Anna'), 0, hints=['  Echt  ', '', '   '])
-    assert result['hints'] == ['Echt']
+def test_slide_parts_are_trimmed_and_blank_bullets_dropped():
+    # Die Textfelder in den Einstellungen produzieren leicht Leerzeilen.
+    result = snap(
+        make_learners('Anna'),
+        0,
+        hints=[{'titel': '  Regeln ', 'text': ' ', 'punkte': ['  Echt  ', '', '   ']}],
+    )
+    assert result['hints'] == [slide('Regeln', punkte=['Echt'])]
 
 
-def test_no_hints_yields_an_empty_list():
+def test_a_title_only_slide_survives():
+    result = snap(make_learners('Anna'), 0, hints=[{'titel': 'Nur ein Titel'}])
+    assert result['hints'] == [slide('Nur ein Titel')]
+
+
+def test_entirely_empty_slides_are_dropped():
+    # Ein Klick auf "+" ohne Eingabe darf draussen keine leere Folie zeigen.
+    result = snap(
+        make_learners('Anna'),
+        0,
+        hints=[{'titel': ' ', 'text': '', 'punkte': ['  ']}, {'titel': 'Bleibt'}],
+    )
+    assert result['hints'] == [slide('Bleibt')]
+
+
+def test_legacy_string_hints_become_text_only_slides():
+    # Aus dem zeilenbasierten Format vor v1.2.1 - darf nicht mit einer Ausnahme
+    # enden, sonst steht die Anzeige draussen still.
+    result = snap(make_learners('Anna'), 0, hints=['Ein alter Hinweis'])
+    assert result['hints'] == [slide(text='Ein alter Hinweis')]
+
+
+def test_pydantic_slides_are_accepted():
+    # Der DisplayController reicht die HinweisFolie-Modelle direkt durch.
+    from app.core.config.settings import HinweisFolie
+
+    result = snap(
+        make_learners('Anna'),
+        0,
+        hints=[HinweisFolie(titel='Foto & Verwendung', punkte=['Foto für LegicCard'])],
+    )
+    assert result['hints'] == [
+        slide('Foto & Verwendung', punkte=['Foto für LegicCard'])
+    ]
+
+
+def test_no_slides_yields_an_empty_list():
     assert snap(make_learners('Anna'), 0)['hints'] == []
 
 
@@ -195,5 +242,5 @@ def test_compact_flag_travels_with_the_snapshot():
 def test_compact_does_not_strip_hints_at_the_source():
     # Ausgeblendet wird erst auf der Seite - so wirkt ein Umschalten sofort,
     # ohne dass draussen jemand neu laden muss.
-    result = snap(make_learners('Anna'), 0, compact=True, hints=['Ein Hinweis'])
-    assert result['hints'] == ['Ein Hinweis']
+    result = snap(make_learners('Anna'), 0, compact=True, hints=[{'titel': 'Regeln'}])
+    assert result['hints'] == [slide('Regeln')]

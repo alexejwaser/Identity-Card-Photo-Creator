@@ -1,5 +1,6 @@
 """Tests for configuration settings management."""
 
+from copy import deepcopy
 from pathlib import Path
 import json
 import pytest
@@ -11,6 +12,7 @@ from app.core.config.settings import (
     BildSettings,
     OverlaySettings,
     KameraSettings,
+    HinweisFolie,
     ZipSettings,
     CopyrightSettings,
     ExcelMapping,
@@ -65,16 +67,34 @@ def test_overlay_path_validation(tmp_path):
         Settings.load(cfg)
 
 
-def test_anzeige_hints_roundtrip(tmp_path):
+def test_anzeige_slides_roundtrip(tmp_path):
     cfg = tmp_path / "settings.json"
     s = Settings.load(cfg)
-    s.anzeige.hinweise = ["Erster Hinweis", "Zweiter Hinweis"]
+    s.anzeige.hinweise = [
+        HinweisFolie(titel="Foto-Regeln", punkte=["Keine Kopfbedeckungen"]),
+        HinweisFolie(text="Nur ein Satz"),
+    ]
     s.anzeige.hinweisIntervallSekunden = 25
     s.save(cfg)
 
     reloaded = Settings.load(cfg)
-    assert reloaded.anzeige.hinweise == ["Erster Hinweis", "Zweiter Hinweis"]
+    assert [f.titel for f in reloaded.anzeige.hinweise] == ["Foto-Regeln", ""]
+    assert reloaded.anzeige.hinweise[0].punkte == ["Keine Kopfbedeckungen"]
+    assert reloaded.anzeige.hinweise[1].text == "Nur ein Satz"
     assert reloaded.anzeige.hinweisIntervallSekunden == 25
+
+
+def test_legacy_string_hints_become_slides(tmp_path):
+    """Vor v1.2.1 war jede Folie ein blosser Satz. Eine settings.json aus dieser
+    Zeit muss ohne Zutun weiterlesen, sonst startet die App nach dem Update nicht."""
+    cfg = tmp_path / "settings.json"
+    data = deepcopy(DEFAULTS)
+    data["anzeige"]["hinweise"] = ["Ein Satz", "Noch ein Satz"]
+    cfg.write_text(json.dumps(data), encoding="utf-8")
+
+    folien = Settings.load(cfg).anzeige.hinweise
+    assert [f.text for f in folien] == ["Ein Satz", "Noch ein Satz"]
+    assert all(f.titel == "" and f.punkte == [] for f in folien)
 
 
 def test_anzeige_defaults_apply_to_an_older_settings_file(tmp_path):
@@ -86,7 +106,7 @@ def test_anzeige_defaults_apply_to_an_older_settings_file(tmp_path):
 
     settings = Settings.load(cfg)
     assert settings.anzeige.port == 8080
-    assert settings.anzeige.hinweise  # Standardhinweis vorhanden
+    assert settings.anzeige.hinweise  # Standardfolien vorhanden
 
 
 def test_anzeige_modus_roundtrip(tmp_path):

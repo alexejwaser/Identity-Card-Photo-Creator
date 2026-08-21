@@ -58,7 +58,9 @@ _PAGE_HTML = """<!doctype html>
     --fs-meta:   clamp(11px, 1.45vh, 18px);
     --fs-label:  clamp(12px, 1.6vh, 20px);
     --fs-now:    clamp(18px, 3.4vh, 40px);
+    --fs-hint-title: clamp(19px, 3.6vh, 42px);
     --fs-hint:   clamp(16px, 2.9vh, 34px);
+    --fs-hint-list: clamp(15px, 2.6vh, 30px);
     --fs-next-1: clamp(32px, 8.6vh, 96px);
     --fs-next-2: clamp(25px, 6.2vh, 68px);
     --fs-next-3: clamp(21px, 4.8vh, 52px);
@@ -128,9 +130,10 @@ _PAGE_HTML = """<!doctype html>
     align-items: center;
     min-height: 0;
   }
-  /* Namen bekommen zwei Drittel, der Hinweis ein Drittel: die Warteschlange ist
-     das, wofür die Leute draussen stehen. */
-  #stage.has-hints { grid-template-columns: 2fr 1fr; }
+  /* Namen bekommen den groesseren Teil: die Warteschlange ist das, wofür die
+     Leute draussen stehen. Etwas mehr als ein Drittel fuer die Folien, weil sie
+     Aufzaehlungen tragen und eine zu schmale Spalte jeden Punkt umbrechen liesse. */
+  #stage.has-hints { grid-template-columns: 1.8fr 1fr; }
   @media (max-width: 900px) {
     #stage.has-hints {
       grid-template-columns: 1fr;
@@ -242,18 +245,62 @@ _PAGE_HTML = """<!doctype html>
     min-height: 0;
     align-self: stretch;
   }
-  #hint-text { flex: 1; display: flex; align-items: center; }
+  /* Der Folieninhalt steht als Block mittig in der freien Hoehe. min-height/
+     overflow: eine ueberlange Folie soll das Panel abschneiden statt es zu
+     sprengen und die Punkt-Indikatoren aus dem Bild zu schieben. */
+  #hint-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--sp-group);
+    min-height: 0;
+    overflow: hidden;
+    transition: opacity .45s ease;
+  }
+  #hint-body.fading { opacity: 0; }
   @media (max-width: 900px) {
     #hints { align-self: auto; gap: var(--sp-group); }
   }
-  #hint-text {
+  .hint-title {
+    font-size: var(--fs-hint-title);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    color: var(--fg);
+    text-wrap: balance;
+  }
+  .hint-para {
+    margin: 0;
     font-size: var(--fs-hint);
     line-height: 1.4;
     color: var(--dim);
     text-wrap: pretty;
-    transition: opacity .45s ease;
   }
-  #hint-text.fading { opacity: 0; }
+  .hint-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-tight);
+    font-size: var(--fs-hint-list);
+    line-height: 1.35;
+    color: var(--dim);
+  }
+  /* Feste Spalte fuer den Aufzaehlungspunkt - genau wie die Ziffernspalte bei
+     #upcoming: ein zweizeiliger Punkt haengt so buendig unter seiner ersten
+     Zeile statt unter das Zeichen zu rutschen. */
+  .hint-list li {
+    display: grid;
+    grid-template-columns: 1.1em 1fr;
+    align-items: baseline;
+    text-wrap: pretty;
+  }
+  .hint-list li::before {
+    content: "\\2022";
+    color: var(--muted);
+  }
   #dots { display: flex; justify-content: center; align-items: center; gap: 10px; }
   /* Punkt-Indikatoren im Apple-Stil: der aktive wird zur breiteren Pille. */
   #dots span {
@@ -341,7 +388,7 @@ _PAGE_HTML = """<!doctype html>
   }
 
   @media (prefers-reduced-motion: reduce) {
-    #bar, #hint-text, #dots span { transition: none; }
+    #bar, #hint-body, #dots span { transition: none; }
     #stale::before, #dots span.active::after { animation: none; }
     #dots span.active::after { transform: scaleX(1); }
   }
@@ -375,7 +422,7 @@ _PAGE_HTML = """<!doctype html>
     </div>
 
     <aside id="hints" hidden>
-      <div id="hint-text"></div>
+      <div id="hint-body"></div>
       <div id="dots"></div>
     </aside>
   </div>
@@ -411,7 +458,7 @@ _PAGE_HTML = """<!doctype html>
   var elUpcoming = document.getElementById('upcoming');
   var elMessage = document.getElementById('message');
   var elHints = document.getElementById('hints');
-  var elHintText = document.getElementById('hint-text');
+  var elHintBody = document.getElementById('hint-body');
   var elDots = document.getElementById('dots');
   var elBar = document.getElementById('bar');
   var elWhere = document.getElementById('where');
@@ -434,18 +481,52 @@ _PAGE_HTML = """<!doctype html>
     });
   }
 
+  // Eine Folie besteht aus Titel, Fliesstext und Aufzaehlung - jeder Teil ist
+  // optional und wird weggelassen statt leer gerendert, sonst reisst er ein Loch
+  // in den zentrierten Block. Aufbau bewusst per createElement/textContent: die
+  // Texte kommen aus einem Eingabefeld der Einstellungen.
+  function renderSlide(slide) {
+    elHintBody.textContent = '';
+    if (!slide) { return; }
+    if (slide.titel) {
+      var title = document.createElement('div');
+      title.className = 'hint-title';
+      title.textContent = slide.titel;
+      elHintBody.appendChild(title);
+    }
+    if (slide.text) {
+      var para = document.createElement('p');
+      para.className = 'hint-para';
+      para.textContent = slide.text;
+      elHintBody.appendChild(para);
+    }
+    var punkte = slide.punkte || [];
+    if (punkte.length) {
+      var list = document.createElement('ul');
+      list.className = 'hint-list';
+      punkte.forEach(function (punkt) {
+        var li = document.createElement('li');
+        var span = document.createElement('span');
+        span.textContent = punkt;
+        li.appendChild(span);
+        list.appendChild(li);
+      });
+      elHintBody.appendChild(list);
+    }
+  }
+
   function showHint(index) {
     hintIndex = index;
-    elHintText.textContent = hints[index] || '';
+    renderSlide(hints[index]);
     renderDots();
   }
 
   function advanceHint() {
     if (hints.length < 2) { return; }
-    elHintText.classList.add('fading');
+    elHintBody.classList.add('fading');
     setTimeout(function () {
       showHint((hintIndex + 1) % hints.length);
-      elHintText.classList.remove('fading');
+      elHintBody.classList.remove('fading');
     }, 450);
   }
 

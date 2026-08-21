@@ -7,7 +7,7 @@ every artifact is uniquely identifiable; local/dev runs without that file show
 "dev". ``get_version()`` is what the UI and window title display.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 
 def _build_id() -> str:

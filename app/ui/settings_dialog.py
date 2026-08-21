@@ -3,9 +3,10 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from pathlib import Path
 from pydantic import ValidationError
 import logging
-from ..core.config.settings import Settings, ExcelMapping, CONFIG_PATH
+from ..core.config.settings import Settings, ExcelMapping, HinweisFolie, CONFIG_PATH
 from ..core.camera import list_cameras, make_webcam_camera
 from .widgets.live_view_widget import LiveViewWidget
+from .widgets.slides_editor import SlidesEditor
 
 
 class SettingsDialog(QtWidgets.QDialog):
@@ -279,11 +280,11 @@ class SettingsDialog(QtWidgets.QDialog):
         )
         anzeige_form.addRow('Modus', self.cmb_display_mode)
         self.cmb_display_layout = QtWidgets.QComboBox()
-        self.cmb_display_layout.addItem('Standard – mit Hinweisen', False)
+        self.cmb_display_layout.addItem('Standard – mit Folien', False)
         self.cmb_display_layout.addItem('Kompakt – kleines Display, nur Namen', True)
         self.cmb_display_layout.setCurrentIndex(1 if anz.kompakt else 0)
         self.cmb_display_layout.setToolTip(
-            'Kompakt blendet die Hinweise aus und vergrössert die Namen deutlich –\n'
+            'Kompakt blendet die Folien aus und vergrössert die Namen deutlich –\n'
             'gedacht für kleine Bildschirme (z.B. ein 7"-Mini-Display).'
         )
         anzeige_form.addRow('Layout', self.cmb_display_layout)
@@ -306,18 +307,21 @@ class SettingsDialog(QtWidgets.QDialog):
             'Ein: voller Name.'
         )
         anzeige_form.addRow('', self.chk_display_full_names)
-        self.txt_display_hints = QtWidgets.QPlainTextEdit('\n'.join(anz.hinweise))
-        self.txt_display_hints.setFixedHeight(90)
-        self.txt_display_hints.setToolTip(
-            'Ein Hinweis pro Zeile. Mehrere Hinweise laufen als Slideshow durch.\n'
-            'Leer lassen blendet das Hinweis-Feld auf der Anzeige aus.'
+        self.ed_display_slides = SlidesEditor()
+        self.ed_display_slides.set_slides([f.model_dump() for f in anz.hinweise])
+        self.ed_display_slides.setFixedHeight(240)
+        self.ed_display_slides.setToolTip(
+            'Die Folien laufen rechts auf der Anzeige als Slideshow durch.\n'
+            'Pro Folie ein Übertitel, ein optionaler Fliesstext und beliebig\n'
+            'viele Aufzählungspunkte (einer pro Zeile).\n'
+            'Keine Folie = kein Hinweis-Feld auf der Anzeige.'
         )
-        anzeige_form.addRow('Hinweise (eine Zeile pro Hinweis)', self.txt_display_hints)
+        anzeige_form.addRow('Folien', self.ed_display_slides)
         self.spin_display_hint_interval = QtWidgets.QSpinBox()
         self.spin_display_hint_interval.setRange(2, 120)
         self.spin_display_hint_interval.setSuffix(' s')
         self.spin_display_hint_interval.setValue(anz.hinweisIntervallSekunden)
-        anzeige_form.addRow('Hinweis-Wechsel alle', self.spin_display_hint_interval)
+        anzeige_form.addRow('Folien-Wechsel alle', self.spin_display_hint_interval)
 
         # ---- Test mode group -----------------------------------------
         test_group = QtWidgets.QGroupBox('Testmodus')
@@ -547,9 +551,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.settings.anzeige.anzahlNaechste = self.spin_display_count.value()
         self.settings.anzeige.vollstaendigeNamen = self.chk_display_full_names.isChecked()
         self.settings.anzeige.hinweise = [
-            line.strip()
-            for line in self.txt_display_hints.toPlainText().splitlines()
-            if line.strip()
+            HinweisFolie(**slide) for slide in self.ed_display_slides.slides()
         ]
         self.settings.anzeige.hinweisIntervallSekunden = (
             self.spin_display_hint_interval.value()
